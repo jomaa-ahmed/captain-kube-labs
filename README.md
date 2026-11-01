@@ -41,6 +41,8 @@ A CHECK button verifies the **result in the cluster**, so any correct method pas
 | [values-precedence](helm/values-precedence) | 10.3 | combine `-f` and `--set`, upgrade without losing values |
 | [bad-upgrade](helm/bad-upgrade) | 10.3 | read `helm history` and roll back a broken upgrade |
 
+Full guide (how it all works, testing, adding packs, troubleshooting): [docs/GUIDE.md](docs/GUIDE.md)
+
 ## Layout
 Every lab folder is one Killercoda scenario: `index.json` (steps + cluster image), `intro.md`, `finish.md`,
 `background.sh` (prepares the cluster, then touches `/tmp/finished`), `foreground.sh` (waits for it),
