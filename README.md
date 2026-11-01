@@ -18,6 +18,21 @@ A CHECK button verifies the **result in the cluster**, so any correct method pas
 | [imperative-yaml](core/imperative-yaml) | 1.19, 1.20 | 🟡 | generate YAML with --dry-run, kubectl explain, apply |
 | [harbor-on-fire](core/harbor-on-fire) | 1.R | 🔴 | boss: find and fix four hidden faults |
 
+## Module 2 · Scheduling
+| Lab | Lessons | Level | You will |
+|---|---|---|---|
+| [manual-scheduling](scheduling/manual-scheduling) | 2.1 | 🟢 | find the missing scheduler, place a pod with nodeName, bring it back |
+| [labels-selectors](scheduling/labels-selectors) | 2.2 | 🟢 | equality and set-based selectors, fix a too-wide Service selector |
+| [taints-tolerations](scheduling/taints-tolerations) | 2.3 | 🟡 | taint a node, tolerations, fix a typo'd toleration, NoExecute eviction |
+| [node-selection](scheduling/node-selection) | 2.4, 2.5 | 🟡 | nodeSelector, required node affinity, fix a case-sensitive affinity |
+| [dedicated-nodes](scheduling/dedicated-nodes) | 2.6 | 🟡 | taint + toleration + affinity to dedicate a node |
+| [resources](scheduling/resources) | 2.7 | 🟡 | requests/limits, an OOMKilled pod, a pod too big for any node |
+| [limits-quotas](scheduling/limits-quotas) | 2.8 | 🟡 | LimitRange defaults, ResourceQuota, read quota errors |
+| [daemonsets-static](scheduling/daemonsets-static) | 2.9, 2.10 | 🟡 | DaemonSet on every node, static pod on a worker, remove a ghost static pod |
+| [priority-schedulers](scheduling/priority-schedulers) | 2.11-2.13 | 🟡 | PriorityClasses, fix a pod waiting for a missing scheduler |
+| [admission](scheduling/admission) | 2.14, 2.15 | 🟡 | read and enable admission plugins on the API server |
+| [pending-boss](scheduling/pending-boss) | 2.R | 🔴 | boss: four Deployments Pending for four different reasons |
+
 ## Module 10 · Helm
 | Lab | Lessons | You will |
 |---|---|---|
@@ -31,6 +46,6 @@ Every lab folder is one Killercoda scenario: `index.json` (steps + cluster image
 `background.sh` (prepares the cluster, then touches `/tmp/finished`), `foreground.sh` (waits for it),
 and `stepN/text.md` + `stepN/verify.sh` (exit 0 = solved). `structure.json` groups labs into courses.
 
-Generators: `tools/gen_core.py`, `tools/gen_helm.py` (shared helpers in `tools/labkit.py`): edit them, not the folders.
+Generators: `tools/gen_core.py`, `tools/gen_sched.py`, `tools/gen_helm.py` (shared helpers in `tools/labkit.py`): edit them, not the folders.
 
 `labs.json` maps lesson codes to lab URLs; the reels repo's `lab_links.py` puts them on the website.

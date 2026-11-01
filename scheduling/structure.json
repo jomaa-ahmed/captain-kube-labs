@@ -1,0 +1,37 @@
+{
+  "items": [
+    {
+      "path": "manual-scheduling"
+    },
+    {
+      "path": "labels-selectors"
+    },
+    {
+      "path": "taints-tolerations"
+    },
+    {
+      "path": "node-selection"
+    },
+    {
+      "path": "dedicated-nodes"
+    },
+    {
+      "path": "resources"
+    },
+    {
+      "path": "limits-quotas"
+    },
+    {
+      "path": "daemonsets-static"
+    },
+    {
+      "path": "priority-schedulers"
+    },
+    {
+      "path": "admission"
+    },
+    {
+      "path": "pending-boss"
+    }
+  ]
+}

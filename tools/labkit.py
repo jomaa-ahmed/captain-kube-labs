@@ -7,6 +7,7 @@ SITE = "https://captains-academy.site/course/kubernetes/lesson/"
 # Killercoda courses in the order they appear on killercoda.com/captainkube
 COURSES = [
     ("core", "Captain Kube · Module 1 · Core Concepts"),
+    ("scheduling", "Captain Kube · Module 2 · Scheduling"),
     ("helm", "Captain Kube · Module 10 · Helm"),
 ]
 

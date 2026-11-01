@@ -1,0 +1,35 @@
+{
+  "title": "🟡 Sched 5 · A dock for team gold",
+  "description": "Dedicate a node to one team with a taint plus node affinity, and see why one alone isn't enough.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Fence the dock",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "Team gold sails in",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh"
+      },
+      {
+        "title": "The batch job strays",
+        "text": "step3/text.md",
+        "verify": "step3/verify.sh",
+        "background": "step3/background.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "kubernetes-kubeadm-2nodes"
+  }
+}

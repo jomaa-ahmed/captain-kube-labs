@@ -5,6 +5,10 @@
       "title": "Captain Kube · Module 1 · Core Concepts"
     },
     {
+      "path": "scheduling",
+      "title": "Captain Kube · Module 2 · Scheduling"
+    },
+    {
       "path": "helm",
       "title": "Captain Kube · Module 10 · Helm"
     }

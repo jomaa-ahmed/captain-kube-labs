@@ -1,0 +1,24 @@
+{
+  "title": "🔴 Sched 11 · Nobody leaves the harbor",
+  "description": "Boss challenge: four Deployments are stuck in Pending, each for a different scheduling reason.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Get every ship out",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "kubernetes-kubeadm-2nodes"
+  }
+}

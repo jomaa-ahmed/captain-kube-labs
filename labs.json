@@ -21,5 +21,21 @@
   "1.R": "https://killercoda.com/captainkube/course/core/harbor-on-fire",
   "10.1": "https://killercoda.com/captainkube/course/helm/first-release",
   "10.2": "https://killercoda.com/captainkube/course/helm/chart-anatomy",
-  "10.3": "https://killercoda.com/captainkube/course/helm/values-precedence"
+  "10.3": "https://killercoda.com/captainkube/course/helm/values-precedence",
+  "2.1": "https://killercoda.com/captainkube/course/scheduling/manual-scheduling",
+  "2.2": "https://killercoda.com/captainkube/course/scheduling/labels-selectors",
+  "2.3": "https://killercoda.com/captainkube/course/scheduling/taints-tolerations",
+  "2.4": "https://killercoda.com/captainkube/course/scheduling/node-selection",
+  "2.5": "https://killercoda.com/captainkube/course/scheduling/node-selection",
+  "2.6": "https://killercoda.com/captainkube/course/scheduling/dedicated-nodes",
+  "2.7": "https://killercoda.com/captainkube/course/scheduling/resources",
+  "2.8": "https://killercoda.com/captainkube/course/scheduling/limits-quotas",
+  "2.9": "https://killercoda.com/captainkube/course/scheduling/daemonsets-static",
+  "2.10": "https://killercoda.com/captainkube/course/scheduling/daemonsets-static",
+  "2.11": "https://killercoda.com/captainkube/course/scheduling/priority-schedulers",
+  "2.12": "https://killercoda.com/captainkube/course/scheduling/priority-schedulers",
+  "2.13": "https://killercoda.com/captainkube/course/scheduling/priority-schedulers",
+  "2.14": "https://killercoda.com/captainkube/course/scheduling/admission",
+  "2.15": "https://killercoda.com/captainkube/course/scheduling/admission",
+  "2.R": "https://killercoda.com/captainkube/course/scheduling/pending-boss"
 }
