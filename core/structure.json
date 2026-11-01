@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "path": "cluster-tour"
+    },
+    {
+      "path": "crictl-node"
+    },
+    {
+      "path": "etcd-peek"
+    },
+    {
+      "path": "pods-first"
+    },
+    {
+      "path": "replicasets"
+    },
+    {
+      "path": "deployments"
+    },
+    {
+      "path": "services-fix"
+    },
+    {
+      "path": "namespaces-dns"
+    },
+    {
+      "path": "imperative-yaml"
+    },
+    {
+      "path": "harbor-on-fire"
+    }
+  ]
+}

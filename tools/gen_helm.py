@@ -1,14 +1,10 @@
 """Generate the Captain Kube Helm lab pack for Killercoda."""
-import json, os, textwrap
+import os
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import labkit
+from labkit import ROOT, SITE, cmd
+
 HELM = os.path.join(ROOT, "helm")
-
-
-def w(path, text, exe=False):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as f:
-        f.write(textwrap.dedent(text).lstrip("\n"))
 
 
 # shared pieces ---------------------------------------------------------------
@@ -27,50 +23,8 @@ sed -i 's/^description:.*/description: The harbor web page, packed for Captain K
 cd /root
 """
 
-FOREGROUND = """\
-echo "⚓ Captain Kube is preparing your harbor..."
-while [ ! -f /tmp/finished ]; do sleep 1; done
-clear
-echo "⚓ Ready. Read the task on the left and get to work, Captain!"
-"""
-
-SITE = "https://captains-academy.site/course/kubernetes/lesson/"
-
-
-def details(text, body):
-    return f"<details><summary>{text}</summary>\n\n{body.strip()}\n\n</details>\n"
-
-
-def cmd(c):
-    return f"```plain\n{c.strip()}\n```{{{{exec}}}}"
-
-
 def lab(folder, title, description, intro, steps, finish, background_extra=""):
-    d = os.path.join(HELM, folder)
-    idx = {
-        "title": title,
-        "description": description,
-        "details": {
-            "intro": {"text": "intro.md", "background": "background.sh", "foreground": "foreground.sh"},
-            "steps": [
-                {"title": s["title"], "text": f"step{i}/text.md", "verify": f"step{i}/verify.sh"}
-                for i, s in enumerate(steps, 1)
-            ],
-            "finish": {"text": "finish.md"},
-        },
-        "backend": {"imageid": "kubernetes-kubeadm-1node"},
-    }
-    w(os.path.join(d, "index.json"), json.dumps(idx, indent=2, ensure_ascii=False) + "\n")
-    w(os.path.join(d, "intro.md"), intro)
-    w(os.path.join(d, "finish.md"), finish)
-    w(os.path.join(d, "foreground.sh"), FOREGROUND)
-    w(os.path.join(d, "background.sh"),
-      "#!/bin/bash\n" + INSTALL_HELM + MAKE_CHART + background_extra + "touch /tmp/finished\n")
-    for i, s in enumerate(steps, 1):
-        D = lambda x: textwrap.dedent(x).strip()
-        text = D(s["text"]) + "\n\n<br>\n\n" + details("💡 Hint", D(s["hint"])) + "\n" + details("Solution", s["solution"])
-        w(os.path.join(d, f"step{i}", "text.md"), text)
-        w(os.path.join(d, f"step{i}", "verify.sh"), "#!/bin/bash\n" + textwrap.dedent(s["verify"]).lstrip("\n"))
+    labkit.lab(HELM, folder, title, description, intro, steps, finish, INSTALL_HELM + MAKE_CHART + background_extra)
 
 
 # lab 1 · first release (10.1, 10.2) ------------------------------------------
@@ -428,9 +382,5 @@ lab(
     background_extra=BAD_UPGRADE,
 )
 
-# repo-level files -------------------------------------------------------------
-w(os.path.join(ROOT, "structure.json"),
-  json.dumps({"items": [{"path": "helm", "title": "Captain Kube · Module 10 · Helm"}]}, indent=2, ensure_ascii=False) + "\n")
-w(os.path.join(HELM, "structure.json"),
-  json.dumps({"items": [{"path": p} for p in ["first-release", "chart-anatomy", "values-precedence", "bad-upgrade"]]}, indent=2) + "\n")
+labkit.structure(HELM, ["first-release", "chart-anatomy", "values-precedence", "bad-upgrade"])
 print("ok")

@@ -1,6 +1,10 @@
 {
   "items": [
     {
+      "path": "core",
+      "title": "Captain Kube · Module 1 · Core Concepts"
+    },
+    {
       "path": "helm",
       "title": "Captain Kube · Module 10 · Helm"
     }
