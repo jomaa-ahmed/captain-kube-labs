@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "path": "first-release"
+    },
+    {
+      "path": "chart-anatomy"
+    },
+    {
+      "path": "values-precedence"
+    },
+    {
+      "path": "bad-upgrade"
+    }
+  ]
+}
