@@ -2,5 +2,5 @@
   "_comment": "lesson code -> Killercoda lab URL; replace USERNAME after the repo is connected, then run lab_links.py",
   "10.1": "https://killercoda.com/USERNAME/course/helm/first-release",
   "10.2": "https://killercoda.com/USERNAME/course/helm/chart-anatomy",
-  "10.3": "https://killercoda.com/USERNAME/course/helm/bad-upgrade"
+  "10.3": "https://killercoda.com/USERNAME/course/helm/values-precedence"
 }
