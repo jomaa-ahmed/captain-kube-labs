@@ -38,7 +38,9 @@ ON_NODE01 = """[ "$(kubectl get pod {p} -o jsonpath='{{.spec.nodeName}}')" = "no
 
 
 def all_on(deploy, node="node01", ns="default"):
-    return f"""[ "$(kubectl -n {ns} get deploy {deploy} -o jsonpath='{{.status.readyReplicas}}')" = "$(kubectl -n {ns} get deploy {deploy} -o jsonpath='{{.spec.replicas}}')" ] || exit 1
+    # nodeName in the template would skip the scheduler (and every rule the lab teaches)
+    return f"""[ -z "$(kubectl -n {ns} get deploy {deploy} -o jsonpath='{{.spec.template.spec.nodeName}}')" ] || exit 1
+[ "$(kubectl -n {ns} get deploy {deploy} -o jsonpath='{{.status.readyReplicas}}')" = "$(kubectl -n {ns} get deploy {deploy} -o jsonpath='{{.spec.replicas}}')" ] || exit 1
 nodes=$(kubectl -n {ns} get pods -l app={deploy} --field-selector=status.phase=Running -o jsonpath='{{range .items[*]}}{{.spec.nodeName}}{{"\\n"}}{{end}}' | sort -u)
 [ "$nodes" = "{node}" ] || exit 1
 """
@@ -55,7 +57,7 @@ lab(
     The **scheduler** is the harbor pilot: it decides which dock every new ship goes to.
     This morning the pilot didn't show up, and the ships are waiting outside the harbor. ⚓
 
-    Lesson: {L("2.1", "Manual scheduling")}
+    Lessons: {L("1.7", "The scheduler: filter & score")} · {L("2.1", "Manual scheduling")}
     """,
     [
         dict(
@@ -114,6 +116,7 @@ lab(
     * No scheduler = new pods stay `Pending` with no events.
     * `spec.nodeName` places a pod directly on a node (only at creation). The scheduler itself does it with a **Binding** object.
     * The scheduler is a static pod: its manifest lives in `/etc/kubernetes/manifests`.
+    * When it runs, it **filters** out nodes that can't take the pod, **scores** the rest and binds the pod to the winner.
     """, "Sched 2 · Find ships by their flags (labels)"),
     """
     mkdir -p /etc/kubernetes/parked
@@ -279,7 +282,7 @@ lab(
                 image: nginx:1.27
             """, "\nkubectl get pod tanker -o wide"),
             verify=ON_NODE01.format(p="tanker") + """
-            kubectl get pod tanker -o jsonpath='{.spec.tolerations[*].key}' | grep -qw cargo || exit 1
+            kubectl get pod tanker -o jsonpath='{range .spec.tolerations[*]}{.key}={.value}:{.effect}{"\\n"}{end}' | grep -qxE 'cargo=(hazardous)?:(NoSchedule)?' || exit 1
             """,
         ),
         dict(
@@ -318,6 +321,8 @@ lab(
             cmd("sed -i 's/value: hazardus/value: hazardous/' /root/barge.yaml\nkubectl replace --force -f /root/barge.yaml\nkubectl get pod barge -o wide"),
             verify="""
             kubectl get node node01 -o jsonpath='{range .spec.taints[*]}{.key}={.value}:{.effect}{"\\n"}{end}' | grep -qx 'cargo=hazardous:NoSchedule' || exit 1
+            # the barge needs the right papers: nodeName alone would sneak past a NoSchedule taint
+            kubectl get pod barge -o jsonpath='{range .spec.tolerations[*]}{.key}={.value}:{.effect}{"\\n"}{end}' | grep -qxE 'cargo=(hazardous)?:(NoSchedule)?' || exit 1
             """ + ON_NODE01.format(p="barge"),
         ),
         dict(
@@ -619,6 +624,7 @@ lab(
                 "kubectl rollout status deploy/gold-batch\nkubectl get pods -l app=gold-batch -o wide"),
             verify="""
             kubectl get deploy gold-batch -o jsonpath='{.spec.template.spec.tolerations[*].key}' | grep -qw team || exit 1
+            kubectl get deploy gold-batch -o jsonpath='{.spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution}' | grep -q '"key":"team"' || exit 1
             kubectl rollout status deploy/gold-batch --timeout=5s >/dev/null 2>&1 || exit 1
             """ + all_on("gold-batch"),
         ),
@@ -1224,7 +1230,8 @@ lab(
 
     Use your Pending checklist: **scheduler → events → selectors/affinity → taints → resources → schedulerName**.
 
-    **Rules:** keep node01's `maintenance` taint, don't delete or recreate the Deployments, and keep a CPU request on `charlie`.
+    **Rules:** keep node01's `maintenance` taint, don't delete or recreate the Deployments, keep `alpha`'s and `bravo`'s
+    nodeSelectors, keep a CPU request on `charlie`, and no `nodeName` shortcuts.
 
     Review: {L("2.R", "Module 2 review")}
     """,
@@ -1252,9 +1259,22 @@ lab(
             for d in alpha bravo charlie delta; do
               [ "$(kubectl -n dock get deploy $d -o jsonpath='{.metadata.uid}')" = "$(cat /root/.uid-$d)" ] || exit 1
               [ "$(kubectl -n dock get deploy $d -o jsonpath='{.status.readyReplicas}')" = "1" ] || exit 1
+              # nodeName in the template would skip the scheduler and every rule in this lab
+              [ -z "$(kubectl -n dock get deploy $d -o jsonpath='{.spec.template.spec.nodeName}')" ] || exit 1
             done
+            node_of() { kubectl -n dock get pods -l app=$1 --field-selector=status.phase=Running -o jsonpath='{.items[0].spec.nodeName}'; }
             kubectl get node node01 -o jsonpath='{range .spec.taints[*]}{.key}={.value}:{.effect}{"\\n"}{end}' | grep -qx 'maintenance=true:NoSchedule' || exit 1
+            # alpha keeps its nodeSelector and lands on an ssd node
+            [ "$(kubectl -n dock get deploy alpha -o jsonpath='{.spec.template.spec.nodeSelector.disktype}')" = "ssd" ] || exit 1
+            [ "$(kubectl get node "$(node_of alpha)" -o jsonpath='{.metadata.labels.disktype}')" = "ssd" ] || exit 1
+            # bravo keeps its node pin and runs on node01, past the taint
+            [ "$(kubectl -n dock get deploy bravo -o jsonpath='{.spec.template.spec.nodeSelector.kubernetes\\.io/hostname}')" = "node01" ] || exit 1
+            [ "$(node_of bravo)" = "node01" ] || exit 1
+            # charlie keeps a (sensible) CPU request
             kubectl -n dock get deploy charlie -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}' | grep -q . || exit 1
+            # delta is scheduled by the real scheduler
+            s=$(kubectl -n dock get deploy delta -o jsonpath='{.spec.template.spec.schedulerName}')
+            [ -z "$s" ] || [ "$s" = "default-scheduler" ] || exit 1
             """,
         ),
     ],

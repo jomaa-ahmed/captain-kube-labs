@@ -11,6 +11,9 @@
     },
     {
       "path": "bad-upgrade"
+    },
+    {
+      "path": "fleet-adrift"
     }
   ]
 }

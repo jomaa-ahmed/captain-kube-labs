@@ -1,4 +1,4 @@
-# Upgrade without losing settings
+# Upgrade without losing settings 🔧
 
 It's a quiet day. Scale the shop down to **1 replica** with **`helm upgrade`**.
 

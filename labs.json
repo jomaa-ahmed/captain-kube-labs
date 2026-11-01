@@ -37,5 +37,9 @@
   "2.13": "https://killercoda.com/captainkube/course/scheduling/priority-schedulers",
   "2.14": "https://killercoda.com/captainkube/course/scheduling/admission",
   "2.15": "https://killercoda.com/captainkube/course/scheduling/admission",
-  "2.R": "https://killercoda.com/captainkube/course/scheduling/pending-boss"
+  "2.R": "https://killercoda.com/captainkube/course/scheduling/pending-boss",
+  "1.2 A": "https://killercoda.com/captainkube/course/core/crictl-node",
+  "1.7": "https://killercoda.com/captainkube/course/scheduling/manual-scheduling",
+  "1.17": "https://killercoda.com/captainkube/course/core/services-fix",
+  "10.R": "https://killercoda.com/captainkube/course/helm/fleet-adrift"
 }

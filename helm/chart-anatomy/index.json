@@ -1,5 +1,5 @@
 {
-  "title": "⚓ Helm 2 · Read the chart",
+  "title": "🟢 Helm 2 · Read the chart",
   "description": "Explore Chart.yaml, values.yaml and templates, and render a chart without installing it.",
   "details": {
     "intro": {

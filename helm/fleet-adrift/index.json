@@ -1,0 +1,29 @@
+{
+  "title": "🔴 Helm 5 · The fleet is adrift",
+  "description": "Boss challenge: inspect Helm's release Secrets, uninstall a ghost release, and rescue two broken releases.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Find the logbook & clear the ghost",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "Rescue beacon and compass",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "kubernetes-kubeadm-1node"
+  }
+}

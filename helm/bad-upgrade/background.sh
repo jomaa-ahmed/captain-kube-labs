@@ -1,4 +1,5 @@
 #!/bin/bash
+kubectl wait --for=condition=Ready node --all --timeout=300s >/dev/null
 if ! command -v helm >/dev/null 2>&1; then
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 fi

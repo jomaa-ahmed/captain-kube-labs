@@ -5,4 +5,4 @@
 
 A pod called **`lighthouse`** is already running.
 
-Lesson: [1.2B ctr vs nerdctl vs crictl](https://captains-academy.site/course/kubernetes/lesson/1.2B)
+Lessons: [1.2A Did Kubernetes drop Docker?](https://captains-academy.site/course/kubernetes/lesson/1.2A) · [1.2B ctr vs nerdctl vs crictl](https://captains-academy.site/course/kubernetes/lesson/1.2B)

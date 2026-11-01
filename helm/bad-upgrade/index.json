@@ -1,5 +1,5 @@
 {
-  "title": "⚓ Helm 4 · The bad upgrade",
+  "title": "🟡 Helm 4 · The bad upgrade",
   "description": "Read the release history, find the last good revision and roll back.",
   "details": {
     "intro": {

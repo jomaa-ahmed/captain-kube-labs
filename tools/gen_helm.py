@@ -1,13 +1,14 @@
-"""Generate the Captain Kube Helm lab pack for Killercoda."""
-import os
+"""Generate the Captain Kube Helm (Module 10) lab pack for Killercoda."""
+import os, textwrap
 
 import labkit
 from labkit import ROOT, SITE, cmd
 
 HELM = os.path.join(ROOT, "helm")
+KC_HELM = "https://killercoda.com/captainkube/course/helm/"
 
+NODE_READY = "kubectl wait --for=condition=Ready node --all --timeout=300s >/dev/null\n"
 
-# shared pieces ---------------------------------------------------------------
 INSTALL_HELM = """\
 if ! command -v helm >/dev/null 2>&1; then
   curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
@@ -23,16 +24,27 @@ sed -i 's/^description:.*/description: The harbor web page, packed for Captain K
 cd /root
 """
 
+
 def lab(folder, title, description, intro, steps, finish, background_extra=""):
-    labkit.lab(HELM, folder, title, description, intro, steps, finish, INSTALL_HELM + MAKE_CHART + background_extra)
+    bg = NODE_READY + INSTALL_HELM + MAKE_CHART + textwrap.dedent(background_extra).lstrip("\n")
+    labkit.lab(HELM, folder, title, description, intro, steps, finish, bg)
 
 
-# lab 1 · first release (10.1, 10.2) ------------------------------------------
+def L(code, name):
+    return f"[{code} {name}]({SITE}{code})"
+
+
+def done(text, next_lab=None):
+    tail = f"\n\nNext lab: **{next_lab}** ⚓" if next_lab else ""
+    return f"# ⚓ Well done, Captain!\n\n{labkit.D(text)}{tail}\n"
+
+
+# 1 · first release (10.1, 10.2) -----------------------------------------------
 lab(
     "first-release",
-    "⚓ Helm 1 · Your first release",
+    "🟢 Helm 1 · Your first release",
     "Install a chart as a named release and find what Helm created.",
-    """
+    f"""
     # Your first release
 
     The harbor needs its web page back online, and the whole thing comes **packed as a Helm chart**:
@@ -44,8 +56,8 @@ lab(
     1. Install the chart as a **release** called `web`
     2. Find the objects Helm created for you
 
-    Lessons: [10.1 Why Helm]({site}10.1) · [10.2 Charts & releases]({site}10.2)
-    """.format(site=SITE),
+    Lessons: {L("10.1", "Why Helm")} · {L("10.2", "Charts & releases")}
+    """,
     [
         dict(
             title="Install the release",
@@ -92,20 +104,16 @@ lab(
             """,
         ),
     ],
-    f"""
-    # ⚓ Well done, Captain!
-
-    You packed nothing by hand: one `helm install` unloaded a Deployment, a Service and a ServiceAccount,
-    all labelled with the release name.
-
-    Next: [10.3 Install, values, upgrade, rollback]({SITE}10.3) · then try **Helm 2 · Read the chart**.
-    """,
+    done("""
+    * One `helm install` unloaded a Deployment, a Service and a ServiceAccount, all labelled with the release name.
+    * `helm list -n <ns>` (or `helm list -A`) shows deployed releases; `helm get manifest` shows the YAML it applied.
+    """, "Helm 2 · Read the chart"),
 )
 
-# lab 2 · chart anatomy (10.2) -------------------------------------------------
+# 2 · chart anatomy (10.2) -----------------------------------------------------
 lab(
     "chart-anatomy",
-    "⚓ Helm 2 · Read the chart",
+    "🟢 Helm 2 · Read the chart",
     "Explore Chart.yaml, values.yaml and templates, and render a chart without installing it.",
     f"""
     # Read the chart
@@ -115,7 +123,7 @@ lab(
     The chart `harbor-web` is at `/root/charts/harbor-web`. You will read it and render it,
     **without installing anything** in the cluster.
 
-    Lesson: [10.2 Charts & releases]({SITE}10.2)
+    Lesson: {L("10.2", "Charts & releases")}
     """,
     [
         dict(
@@ -194,18 +202,14 @@ lab(
             """,
         ),
     ],
-    f"""
-    # ⚓ Well done, Captain!
-
-    You can read a chart like a cargo list: `Chart.yaml` says what it is, `values.yaml` holds the defaults,
-    `templates/` turns them into YAML, and `helm template` shows the result **without touching the cluster**.
-
-    Next: [10.3 Install, values, upgrade, rollback]({SITE}10.3) · then try **Helm 3 · Values that win**.
-    """,
+    done("""
+    * `Chart.yaml` says what the chart is, `values.yaml` holds its defaults, and `templates/` turns them into YAML.
+    * `helm show values` reads the settings before you install; `helm template` renders YAML without touching the cluster.
+    """, "Helm 3 · Values that win"),
     background_extra="sed -i 's/^replicaCount:.*/replicaCount: 2/' /root/charts/harbor-web/values.yaml\n",
 )
 
-# lab 3 · values precedence (10.3) --------------------------------------------
+# 3 · values precedence (10.3) -------------------------------------------------
 PROD_VALUES = """\
 cat > /root/prod-values.yaml <<'EOF'
 replicaCount: 2
@@ -216,7 +220,7 @@ EOF
 
 lab(
     "values-precedence",
-    "⚓ Helm 3 · Values that win",
+    "🟡 Helm 3 · Values that win",
     "Combine a values file with --set, then upgrade without losing your settings.",
     f"""
     # Values that win
@@ -226,7 +230,7 @@ lab(
 
     Remember the order: **chart defaults < `-f` files < `--set`** (last one wins).
 
-    Lesson: [10.3 Install, values, upgrade, rollback]({SITE}10.3)
+    Lesson: {L("10.3", "Install, values, upgrade, rollback")}
     """,
     [
         dict(
@@ -262,7 +266,7 @@ lab(
         dict(
             title="Upgrade without losing settings",
             text="""
-            # Upgrade without losing settings
+            # Upgrade without losing settings 🔧
 
             It's a quiet day. Scale the shop down to **1 replica** with **`helm upgrade`**.
 
@@ -287,18 +291,15 @@ lab(
             """,
         ),
     ],
-    f"""
-    # ⚓ Well done, Captain!
-
+    done(f"""
     * `-f` files beat the chart defaults, and `--set` beats them all.
     * `helm upgrade` starts from the chart defaults again: pass your values again or use `--reuse-values`.
-
-    Next: try **Helm 4 · The bad upgrade**, where you sail back in the logbook.
-    """,
+    * Lesson 10.3 has a second lab on rollbacks: open [Helm 4 · The bad upgrade]({KC_HELM}bad-upgrade) next!
+    """, "Helm 4 · The bad upgrade"),
     background_extra=PROD_VALUES,
 )
 
-# lab 4 · bad upgrade + rollback (10.3) ---------------------------------------
+# 4 · bad upgrade + rollback (10.3) --------------------------------------------
 BAD_UPGRADE = """\
 helm install web /root/charts/harbor-web -n fleet --create-namespace --wait --timeout 5m >/dev/null
 helm upgrade web /root/charts/harbor-web -n fleet --set image.tag=1.27-tpyo >/dev/null
@@ -306,7 +307,7 @@ helm upgrade web /root/charts/harbor-web -n fleet --set image.tag=1.27-tpyo >/de
 
 lab(
     "bad-upgrade",
-    "⚓ Helm 4 · The bad upgrade",
+    "🟡 Helm 4 · The bad upgrade",
     "Read the release history, find the last good revision and roll back.",
     f"""
     # The bad upgrade
@@ -316,7 +317,7 @@ lab(
 
     Helm keeps a **logbook** of every release revision. You will read it and **sail back to the last good position**.
 
-    Lesson: [10.3 Install, values, upgrade, rollback]({SITE}10.3)
+    Lesson: {L("10.3", "Install, values, upgrade, rollback")}
     """,
     [
         dict(
@@ -344,7 +345,7 @@ lab(
         dict(
             title="Sail back",
             text="""
-            # Sail back
+            # Sail back 🔧
 
             **Roll back** the release `web` to the last good revision.
 
@@ -370,17 +371,132 @@ lab(
             """,
         ),
     ],
-    f"""
-    # ⚓ Well done, Captain!
-
+    done("""
     * `helm history` is the logbook: every install, upgrade and rollback is a revision.
     * `helm rollback` restores the **objects** of an old revision and records it as a new one.
     * It doesn't restore **volume data**: back up before risky upgrades.
-
-    That's the whole Helm module. ⚓ Next: [Module 11 · Kustomize]({SITE}11.T)
-    """,
+    """, "Helm 5 · The fleet is adrift (boss)"),
     background_extra=BAD_UPGRADE,
 )
 
-labkit.structure(HELM, ["first-release", "chart-anatomy", "values-precedence", "bad-upgrade"])
+# 5 · boss (10.R) --------------------------------------------------------------
+BOSS_SETUP = """\
+kubectl create namespace armada >/dev/null
+helm install ghost /root/charts/harbor-web -n armada --set image.tag=1.27-ghost >/dev/null
+helm install beacon /root/charts/harbor-web -n armada --wait --timeout 5m >/dev/null
+helm upgrade beacon /root/charts/harbor-web -n armada --set image.tag=1.27-tpyo >/dev/null
+helm upgrade beacon /root/charts/harbor-web -n armada --set image.tag=1.27-tpyo,service.port=8080 >/dev/null
+cat > /root/compass-prod.yaml <<'EOF'
+replicaCount: 2
+image:
+  repository: nginx
+  tag: "1.27-alpin"
+podLabels:
+  tier: nav
+service:
+  type: NodePort
+  port: 80
+EOF
+helm install compass /root/charts/harbor-web -n armada -f /root/compass-prod.yaml >/dev/null
+helm upgrade compass /root/charts/harbor-web -n armada --set replicaCount=1 >/dev/null
+"""
+
+lab(
+    "fleet-adrift",
+    "🔴 Helm 5 · The fleet is adrift",
+    "Boss challenge: inspect Helm's release Secrets, uninstall a ghost release, and rescue two broken releases.",
+    f"""
+    # The fleet is adrift 🔥
+
+    Three Helm releases in namespace **`armada`** are in a mess after a night watch gone wrong:
+    * **`ghost`** is a leftover test release that shouldn't be in the harbor at all.
+    * **`beacon`** was upgraded twice and both upgrades broke it.
+    * **`compass`** lost its production settings from **`/root/compass-prod.yaml`** (and that file has a bug of its own).
+
+    **Rules:** use Helm for every change—no `kubectl delete deploy`, no `kubectl set image`, no `kubectl edit`.
+
+    Review: {L("10.R", "Module 10 review")}
+    """,
+    [
+        dict(
+            title="Find the logbook & clear the ghost",
+            text="""
+            # Find the logbook & clear the ghost 🔥
+
+            1. Helm stores its release history inside Kubernetes **Secrets** in the release's namespace (`armada`).
+               Inspect them and write their Secret **`TYPE`** into **`/root/secret-type.txt`**.
+            2. Uninstall the release **`ghost`** from **`armada`** cleanly with Helm, so both its objects and its release Secrets are gone.
+            """,
+            hint="`kubectl get secrets -n armada` shows the release Secrets and their `TYPE` column. "
+                 "`helm uninstall <release> -n <ns>` removes a release and its history.",
+            solution=cmd("kubectl get secrets -n armada\n"
+                         "kubectl get secrets -n armada -l owner=helm -o jsonpath='{.items[0].type}' > /root/secret-type.txt\n"
+                         "cat /root/secret-type.txt") + "\n\n" +
+            cmd("helm uninstall ghost -n armada\nhelm list -n armada"),
+            verify="""
+            [ "$(tr -d '[:space:]' < /root/secret-type.txt 2>/dev/null)" = "helm.sh/release.v1" ] || exit 1
+            helm list -n armada -a -q | grep -qx ghost && exit 1
+            kubectl get secret -n armada -l owner=helm,name=ghost --no-headers 2>/dev/null | grep -q . && exit 1
+            kubectl get deploy -n armada -l app.kubernetes.io/instance=ghost --no-headers 2>/dev/null | grep -q . && exit 1
+            exit 0
+            """,
+        ),
+        dict(
+            title="Rescue beacon and compass",
+            text="""
+            # Rescue beacon and compass 🔥
+
+            Bring both remaining releases in **`armada`** back to health (faults hidden here: **3**):
+
+            * **`beacon`**: check its revision history, find the revision where it worked (image `nginx:1.27`, service port `80`),
+              and **roll `beacon` back** to that revision with Helm (don't uninstall or run a new upgrade).
+            * **`compass`**: upgrade it from `/root/charts/harbor-web` using **`/root/compass-prod.yaml`**, and fix the broken
+              image tag so `compass` runs **2 ready pods** with image **`nginx:1.27-alpine`**, pod label **`tier=nav`**,
+              and a **`NodePort`** Service.
+            """,
+            hint="For `beacon`: `helm history beacon -n armada` and `helm get values beacon -n armada --revision N`, then "
+                 "`helm rollback beacon <rev> -n armada`. "
+                 "For `compass`: look at `/root/compass-prod.yaml` (`1.27-alpin` is missing an `e`), then run "
+                 "`helm upgrade compass /root/charts/harbor-web -n armada -f /root/compass-prod.yaml --set image.tag=1.27-alpine`.",
+            solution=cmd("helm history beacon -n armada\nhelm get values beacon -n armada --revision 1\n"
+                         "helm rollback beacon 1 -n armada") + "\n\n" +
+            cmd("cat /root/compass-prod.yaml\n"
+                "helm upgrade compass /root/charts/harbor-web -n armada -f /root/compass-prod.yaml --set image.tag=1.27-alpine\n"
+                "kubectl get pods,svc -n armada"),
+            verify="""
+            helm list -n armada --deployed -q | grep -qx beacon || exit 1
+            bh=$(helm history beacon -n armada --max 100)
+            echo "$bh" | grep -q 'Install complete' || exit 1
+            echo "$bh" | tail -n 1 | grep -q 'Rollback to 1' || exit 1
+            [ "$(kubectl get svc -n armada -l app.kubernetes.io/instance=beacon -o jsonpath='{.items[0].spec.ports[0].port}')" = "80" ] || exit 1
+            bd=$(kubectl get deploy -n armada -l app.kubernetes.io/instance=beacon -o jsonpath='{.items[0].metadata.name}')
+            kubectl -n armada rollout status deploy/$bd --timeout=5s >/dev/null 2>&1 || exit 1
+
+            helm list -n armada --deployed -q | grep -qx compass || exit 1
+            cd=$(kubectl get deploy -n armada -l app.kubernetes.io/instance=compass -o jsonpath='{.items[0].metadata.name}')
+            [ "$(kubectl get deploy $cd -n armada -o jsonpath='{.spec.replicas}')" = "2" ] || exit 1
+            [ "$(kubectl get deploy $cd -n armada -o jsonpath='{.status.readyReplicas}')" = "2" ] || exit 1
+            [ "$(kubectl get deploy $cd -n armada -o jsonpath='{.spec.template.spec.containers[0].image}')" = "nginx:1.27-alpine" ] || exit 1
+            [ "$(kubectl get deploy $cd -n armada -o jsonpath='{.spec.template.metadata.labels.tier}')" = "nav" ] || exit 1
+            [ "$(kubectl get svc -n armada -l app.kubernetes.io/instance=compass -o jsonpath='{.items[0].spec.type}')" = "NodePort" ] || exit 1
+            cv=$(helm get values compass -n armada -o yaml)
+            echo "$cv" | grep -q '1.27-alpine' || exit 1
+            echo "$cv" | grep -q 'NodePort' || exit 1
+            """,
+        ),
+    ],
+    done(f"""
+    You rescued the whole armada:
+
+    1. Found Helm's release history stored in **`helm.sh/release.v1` Secrets** inside the release's namespace
+    2. Removed `ghost` cleanly with **`helm uninstall`**
+    3. Rolled **`beacon`** back across two bad upgrades to revision 1 (creating revision 4)
+    4. Upgraded **`compass`** with `-f /root/compass-prod.yaml` and `--set image.tag=1.27-alpine`
+
+    Module 10 conquered. 🏆 Next on the course: [Module 11 · Kustomize]({SITE}11.T)
+    """),
+    background_extra=BOSS_SETUP,
+)
+
+labkit.structure(HELM, ["first-release", "chart-anatomy", "values-precedence", "bad-upgrade", "fleet-adrift"])
 print("ok")

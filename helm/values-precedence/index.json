@@ -1,5 +1,5 @@
 {
-  "title": "⚓ Helm 3 · Values that win",
+  "title": "🟡 Helm 3 · Values that win",
   "description": "Combine a values file with --set, then upgrade without losing your settings.",
   "details": {
     "intro": {

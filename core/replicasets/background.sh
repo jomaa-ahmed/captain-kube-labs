@@ -36,4 +36,5 @@ EOF
 kubectl apply -f /root/.rs.yaml >/dev/null && rm /root/.rs.yaml
 kubectl get rs deckhands -o jsonpath='{.metadata.uid}' > /root/.deckhands-uid
 kubectl wait --for=condition=Ready pod -l app=crew --timeout=300s >/dev/null
+kubectl get pods -l app=crew -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' > /root/.crew-initial-pods
 touch /tmp/finished

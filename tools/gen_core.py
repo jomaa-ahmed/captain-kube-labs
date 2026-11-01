@@ -126,7 +126,7 @@ lab(
 
     A pod called **`lighthouse`** is already running.
 
-    Lesson: {L("1.2B", "ctr vs nerdctl vs crictl")}
+    Lessons: {L("1.2A", "Did Kubernetes drop Docker?")} · {L("1.2B", "ctr vs nerdctl vs crictl")}
     """,
     [
         dict(
@@ -402,9 +402,11 @@ lab(
             p=$(tr -d '[:space:]' < /root/new-pod.txt 2>/dev/null)
             [ -n "$p" ] || exit 1
             [ "$(kubectl get pod "$p" -o jsonpath='{.metadata.labels.app}' 2>/dev/null)" = "crew" ] || exit 1
-            rs=$(date -d "$(kubectl get rs crew -o jsonpath='{.metadata.creationTimestamp}')" +%s)
-            pod=$(date -d "$(kubectl get pod "$p" -o jsonpath='{.metadata.creationTimestamp}')" +%s)
-            [ $((pod - rs)) -ge 15 ] || exit 1
+            # the new pod must not be one of the pods that existed when the lab started
+            grep -qx "$p" /root/.crew-initial-pods && exit 1
+            # and the ReplicaSet must own it (not a hand-made pod with the same label)
+            [ "$(kubectl get pod "$p" -o jsonpath='{.metadata.ownerReferences[0].name}')" = "crew" ] || exit 1
+            exit 0
             """,
         ),
         dict(
@@ -486,6 +488,7 @@ lab(
     kubectl apply -f /root/.rs.yaml >/dev/null && rm /root/.rs.yaml
     kubectl get rs deckhands -o jsonpath='{.metadata.uid}' > /root/.deckhands-uid
     kubectl wait --for=condition=Ready pod -l app=crew --timeout=300s >/dev/null
+    kubectl get pods -l app=crew -o jsonpath='{range .items[*]}{.metadata.name}{"\\n"}{end}' > /root/.crew-initial-pods
     """,
 )
 
@@ -562,8 +565,10 @@ lab(
             [ "$(kubectl get deploy cargo -o jsonpath='{.spec.template.spec.containers[0].image}')" = "nginx:1.27" ] || exit 1
             rev=$(kubectl get deploy cargo -o jsonpath='{.metadata.annotations.deployment\\.kubernetes\\.io/revision}')
             [ "${rev:-0}" -ge 4 ] || exit 1
-            # one ReplicaSet per version (1.26, 1.27, broken): the undo reuses the 1.27 one
-            [ "$(kubectl get rs -l app=cargo --no-headers | wc -l)" = "3" ] || exit 1
+            # the broken ReplicaSet must still exist (history kept) and be scaled to 0
+            broken=$(kubectl get rs -l app=cargo -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].image} {.spec.replicas}{"\\n"}{end}' | grep '1.27-broken')
+            [ -n "$broken" ] || exit 1
+            echo "$broken" | grep -qv ' 0$' && exit 1
             kubectl rollout status deployment/cargo --timeout=5s >/dev/null 2>&1 || exit 1
             """,
         ),
@@ -580,7 +585,7 @@ lab(
 lab(
     "services-fix",
     "🟡 Core 7 · Give the harbor an address",
-    "Fix a Service with no endpoints, expose an app on a NodePort and create a ClusterIP for a backend.",
+    "Fix a Service with no endpoints, expose an app on a NodePort, create a ClusterIP for a backend and see why a LoadBalancer stays pending.",
     f"""
     # Give the harbor an address
 
@@ -589,7 +594,7 @@ lab(
 
     On deck: Deployments **`web`** and **`api`**, a Service **`web`** that doesn't work, and a pod **`client`**.
 
-    Lessons: {L("1.14", "Services")} · {L("1.15", "NodePort")} · {L("1.16", "ClusterIP")} · {L("1.9", "kube-proxy")}
+    Lessons: {L("1.14", "Services")} · {L("1.15", "NodePort")} · {L("1.16", "ClusterIP")} · {L("1.17", "LoadBalancer")} · {L("1.9", "kube-proxy")}
     """,
     [
         dict(
@@ -652,13 +657,42 @@ lab(
             kubectl exec client -- wget -qO- -T 3 http://api 2>/dev/null | """ + NGINX_OK + """ || exit 1
             """,
         ),
+        dict(
+            title="Ask for a LoadBalancer",
+            text="""
+            # Ask for a LoadBalancer
+
+            In the cloud, a **LoadBalancer** Service gets a public IP from the cloud provider. This harbor has no cloud.
+
+            1. Create a Service **`web-lb`** of type **LoadBalancer** for the Deployment `web`, on port **80**
+            2. Look at its **EXTERNAL-IP** column and write exactly what you see there into **`/root/lb-external.txt`**
+            3. A LoadBalancer is built **on top of a NodePort**: write its node port into **`/root/lb-nodeport.txt`**
+               and check that `curl http://localhost:<that port>` already works
+            """,
+            hint="`kubectl expose deployment web --name=web-lb --type=LoadBalancer --port=80`, then `kubectl get svc web-lb`. "
+                 "The node port is in the PORT(S) column (`80:3xxxx/TCP`) or `-o jsonpath='{.spec.ports[0].nodePort}'`.",
+            solution=cmd("kubectl expose deployment web --name=web-lb --type=LoadBalancer --port=80\nkubectl get svc web-lb") + "\n\n" +
+            cmd("echo '<pending>' > /root/lb-external.txt\n"
+                "kubectl get svc web-lb -o jsonpath='{.spec.ports[0].nodePort}' > /root/lb-nodeport.txt\n"
+                "curl -s localhost:$(cat /root/lb-nodeport.txt) | head -4"),
+            verify="""
+            [ "$(kubectl get svc web-lb -o jsonpath='{.spec.type}')" = "LoadBalancer" ] || exit 1
+            np=$(kubectl get svc web-lb -o jsonpath='{.spec.ports[0].nodePort}')
+            [ -n "$np" ] || exit 1
+            [ "$(tr -d '[:space:]' < /root/lb-nodeport.txt 2>/dev/null)" = "$np" ] || exit 1
+            ext=$(kubectl get svc web-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}{.status.loadBalancer.ingress[0].hostname}')
+            got=$(tr -d '[:space:]<>' < /root/lb-external.txt 2>/dev/null | tr 'A-Z' 'a-z')
+            [ "$got" = "${ext:-pending}" ] || exit 1
+            curl -s -m 3 "http://localhost:$np" | """ + NGINX_OK + """ || exit 1
+            """,
+        ),
     ],
     done("""
     * A Service finds pods by **selector**; no matching labels = no endpoints = nothing answers.
     * `port` is the Service's port, `targetPort` the container's, `nodePort` (30000-32767) the one on every node.
     * kube-proxy writes the rules on each node that turn the Service IP into pod IPs.
-    * **LoadBalancer** would stay `<pending>` here: it needs a cloud (or MetalLB) to hand out the external IP,
-      and it builds on a NodePort.
+    * **LoadBalancer** stays `<pending>` without a cloud (or MetalLB) to hand out the external IP,
+      but it already works as a NodePort underneath.
     """, "Core 8 · Sail between harbors (Namespaces)"),
     """
     kubectl create deployment web --image=nginx:1.27 --replicas=2 >/dev/null
@@ -735,6 +769,9 @@ lab(
             verify="""
             [ "$(kubectl get svc -A -l app=shop --no-headers | wc -l)" = "1" ] || exit 1
             kubectl -n market get svc shop >/dev/null 2>&1 || exit 1
+            # a DNS name, not a hard-coded IP that breaks when the Service is recreated
+            url=$(kubectl -n docks get deploy buyer -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SHOP_URL")].value}')
+            echo "$url" | grep -q 'shop\\.market' || exit 1
             kubectl -n docks rollout status deploy/buyer --timeout=5s >/dev/null 2>&1 || exit 1
             kubectl -n docks logs deploy/buyer --tail=2 2>/dev/null | grep -q 'OK reached shop' || exit 1
             """,
@@ -920,6 +957,8 @@ lab(
                 "kubectl -n town rollout status deploy/visitor\nsleep 5; kubectl -n town logs deploy/visitor --tail=3"),
             verify="""
             [ "$(kubectl get svc -A --no-headers | grep -c harbor-web)" = "1" ] || exit 1
+            url=$(kubectl -n town get deploy visitor -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="TARGET")].value}')
+            echo "$url" | grep -q 'harbor-web\\.harbor' || exit 1
             kubectl -n town rollout status deploy/visitor --timeout=5s >/dev/null 2>&1 || exit 1
             kubectl -n town logs deploy/visitor --tail=2 2>/dev/null | grep -q 'OK harbor reached' || exit 1
             """,

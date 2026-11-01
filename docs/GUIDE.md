@@ -52,15 +52,15 @@ Each module ends with a 🔴 **boss lab**: several hidden faults, and only a goa
 
 | Course on Killercoda | Labs | Lessons linked |
 |---|---|---|
-| Module 1 · Core Concepts (`core`) | 10 | 19 |
-| Module 2 · Scheduling (`scheduling`) | 11 | 16 |
-| Module 10 · Helm (`helm`) | 4 | 3 |
-| **Total** | **25** | **38** |
+| Module 1 · Core Concepts (`core`) | 10 | 21 |
+| Module 2 · Scheduling (`scheduling`) | 11 | 17 |
+| Module 10 · Helm (`helm`) | 5 | 4 |
+| **Total** | **26** | **42** |
 
 Full lab lists with levels are in the repo [README](../README.md).
 
-Lessons without a lab: trailers (`x.T`) and a few pure-theory lessons (1.2 A, 1.7, 1.17). Their ideas are covered in the
-finish pages of nearby labs.
+Every lesson of Modules 1, 2 and 10 has a lab except the trailers (`x.T`). Lesson 1.7 (the scheduler) shares the
+Scheduling lab `manual-scheduling`; lesson 10.3 links `values-precedence`, whose finish page sends learners on to `bad-upgrade`.
 
 ---
 
@@ -93,6 +93,9 @@ core/deployments/
    * `kubectl create` instead of `apply` (no `last-applied-configuration` annotation)
    * a new `set image` instead of `rollout undo` (revision count)
    * removing a taint that the task says to keep
+   * `nodeName` in a pod template, which skips the scheduler (and every taint, selector and affinity rule)
+   * deleting the rule instead of fixing it (a nodeSelector or toleration that the task says to keep)
+   * a hard-coded IP instead of a DNS name in a client's environment
 3. **Say what isn't allowed** in the task text (⚠️ lines), so the learner knows the rules.
 4. **Answers in files** (`/root/x.txt`) are compared after removing spaces and newlines.
 5. **Levels:** 🟢 Easy · 🟡 Medium · 🔴 Hard (boss). 🔧 marks a "fix it" step.

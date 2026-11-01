@@ -1,4 +1,4 @@
-# Sail back
+# Sail back 🔧
 
 **Roll back** the release `web` to the last good revision.
 

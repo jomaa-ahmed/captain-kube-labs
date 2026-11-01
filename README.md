@@ -8,12 +8,12 @@ A CHECK button verifies the **result in the cluster**, so any correct method pas
 | Lab | Lessons | Level | You will |
 |---|---|---|---|
 | [cluster-tour](core/cluster-tour) | 1.1, 1.5, 1.8 | 🟢 | find the control plane, the static pods and the kubelet |
-| [crictl-node](core/crictl-node) | 1.2 B | 🟢 | inspect containers and pod sandboxes with crictl |
+| [crictl-node](core/crictl-node) | 1.2 A, 1.2 B | 🟢 | inspect containers and pod sandboxes with crictl |
 | [etcd-peek](core/etcd-peek) | 1.3, 1.4 | 🟡 | run etcdctl with etcd's certificates and read the /registry keys |
 | [pods-first](core/pods-first) | 1.10, 1.11 | 🟢 | write a pod in YAML, rescue a broken pod, add a sidecar |
 | [replicasets](core/replicasets) | 1.6, 1.12 | 🟡 | watch the control loop, scale, fix a ReplicaSet with a bad image |
 | [deployments](core/deployments) | 1.13 | 🟡 | create, roll out and undo a broken rollout |
-| [services-fix](core/services-fix) | 1.9, 1.14-1.16 | 🟡 | fix a Service with no endpoints, NodePort 30080, ClusterIP backend |
+| [services-fix](core/services-fix) | 1.9, 1.14-1.17 | 🟡 | fix a Service with no endpoints, NodePort 30080, ClusterIP backend, a pending LoadBalancer |
 | [namespaces-dns](core/namespaces-dns) | 1.18 | 🟡 | switch namespaces, full DNS names, fix a cross-namespace client |
 | [imperative-yaml](core/imperative-yaml) | 1.19, 1.20 | 🟡 | generate YAML with --dry-run, kubectl explain, apply |
 | [harbor-on-fire](core/harbor-on-fire) | 1.R | 🔴 | boss: find and fix four hidden faults |
@@ -21,7 +21,7 @@ A CHECK button verifies the **result in the cluster**, so any correct method pas
 ## Module 2 · Scheduling
 | Lab | Lessons | Level | You will |
 |---|---|---|---|
-| [manual-scheduling](scheduling/manual-scheduling) | 2.1 | 🟢 | find the missing scheduler, place a pod with nodeName, bring it back |
+| [manual-scheduling](scheduling/manual-scheduling) | 1.7, 2.1 | 🟢 | find the missing scheduler, place a pod with nodeName, bring it back |
 | [labels-selectors](scheduling/labels-selectors) | 2.2 | 🟢 | equality and set-based selectors, fix a too-wide Service selector |
 | [taints-tolerations](scheduling/taints-tolerations) | 2.3 | 🟡 | taint a node, tolerations, fix a typo'd toleration, NoExecute eviction |
 | [node-selection](scheduling/node-selection) | 2.4, 2.5 | 🟡 | nodeSelector, required node affinity, fix a case-sensitive affinity |
@@ -34,12 +34,13 @@ A CHECK button verifies the **result in the cluster**, so any correct method pas
 | [pending-boss](scheduling/pending-boss) | 2.R | 🔴 | boss: four Deployments Pending for four different reasons |
 
 ## Module 10 · Helm
-| Lab | Lessons | You will |
-|---|---|---|
-| [first-release](helm/first-release) | 10.1, 10.2 | install a chart as a release and find what it created |
-| [chart-anatomy](helm/chart-anatomy) | 10.2 | read Chart.yaml / values.yaml and render with `helm template` |
-| [values-precedence](helm/values-precedence) | 10.3 | combine `-f` and `--set`, upgrade without losing values |
-| [bad-upgrade](helm/bad-upgrade) | 10.3 | read `helm history` and roll back a broken upgrade |
+| Lab | Lessons | Level | You will |
+|---|---|---|---|
+| [first-release](helm/first-release) | 10.1, 10.2 | 🟢 | install a chart as a release and find what it created |
+| [chart-anatomy](helm/chart-anatomy) | 10.2 | 🟢 | read Chart.yaml / values.yaml and render with `helm template` |
+| [values-precedence](helm/values-precedence) | 10.3 | 🟡 | combine `-f` and `--set`, upgrade without losing values |
+| [bad-upgrade](helm/bad-upgrade) | 10.3 | 🟡 | read `helm history` and roll back a broken upgrade |
+| [fleet-adrift](helm/fleet-adrift) | 10.R | 🔴 | boss: release Secrets, a ghost release, a double bad upgrade and lost values |
 
 Full guide (how it all works, testing, adding packs, troubleshooting): [docs/GUIDE.md](docs/GUIDE.md)
 
