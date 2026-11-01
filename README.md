@@ -1,7 +1,7 @@
 # ⚓ Captain Kube Labs
 
 Hands-on Kubernetes labs for the Captain Kube course ([captains-academy.site](https://captains-academy.site)).
-Each lab runs on a real cluster on [Killercoda](https://killercoda.com) (free account, 1 h session).
+Each lab runs on a real cluster on [Killercoda](https://killercoda.com/captainkube) (free account, 1 h session).
 A CHECK button verifies the **result in the cluster**, so any correct method passes, like the CKA exam.
 
 ## Module 10 · Helm
