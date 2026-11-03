@@ -1,0 +1,104 @@
+[
+ {
+  "folder": "first-apply",
+  "steps": [
+   {
+    "solve": "cd $R/shipyard\nterraform init\nterraform apply -auto-approve",
+    "wrong": "cd $R/shipyard\necho 'Hello, shipyard!' > hello.txt"
+   },
+   {
+    "solve": "cd $R/shipyard\nterraform plan\nterraform apply -auto-approve",
+    "wrong": "cd $R/shipyard\necho 'Hello, shipyard!' > hello.txt"
+   }
+  ]
+ },
+ {
+  "folder": "fix-the-blueprint",
+  "steps": [
+   {
+    "solve": "cd $R/blueprint\nterraform init\nsed -i 's/lifecycle = {/lifecycle {/; s/filname /filename/' main.tf\nterraform fmt\nterraform validate",
+    "wrong": "cd $R/blueprint\nterraform init\nprintf 'resource \"local_file\" \"note\" {\\n  filename = \"note.txt\"\\n  content  = \"x\"\\n}\\n' > main.tf"
+   },
+   {
+    "solve": "cd $R/blueprint\nterraform apply -auto-approve",
+    "wrong": "cd $R/blueprint\necho 'A valid blueprint' > note.txt"
+   }
+  ]
+ },
+ {
+  "folder": "references",
+  "steps": [
+   {
+    "solve": "cd $R/references\nsed -i 's/CHANGE-ME/${random_pet.ship.id}/' main.tf\nterraform init\nterraform apply -auto-approve",
+    "wrong": "cd $R/references\nsed -i 's/CHANGE-ME/brave-ship/' main.tf\nterraform init\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "layout-and-fmt",
+  "steps": [
+   {
+    "solve": "cd $R/layout\ncat > terraform.tf <<'HCL'\nterraform {\n  required_providers {\n    local = { source = \"hashicorp/local\" }\n  }\n}\nHCL\ncat > main.tf <<'HCL'\nresource \"local_file\" \"crew\" {\n  filename = \"${path.module}/crew.txt\"\n  content  = \"Crew of the shipyard\"\n}\nHCL\ncat > outputs.tf <<'HCL'\noutput \"crew_file\" {\n  value = local_file.crew.filename\n}\nHCL\nrm all.tf\nterraform fmt\nterraform init\nterraform validate",
+    "wrong": "cd $R/layout\nterraform fmt\nterraform init\nterraform validate"
+   }
+  ]
+ },
+ {
+  "folder": "read-the-plan",
+  "steps": [
+   {
+    "solve": "cd $R/plan\nterraform plan\nmkdir -p $R/answers\necho local_file.replace_me > $R/answers/replaced.txt\necho local_file.delete_me > $R/answers/destroyed.txt\necho 2 > $R/answers/add.txt",
+    "wrong": "mkdir -p $R/answers\necho local_file.replace_me > $R/answers/replaced.txt\necho local_file.delete_me > $R/answers/destroyed.txt\necho 1 > $R/answers/add.txt"
+   },
+   {
+    "solve": "cd $R/plan\nterraform plan -out=tfplan\nterraform apply tfplan",
+    "wrong": "cd $R/plan\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "half-built",
+  "steps": [
+   {
+    "solve": "cd $R/halfbuilt\nterraform apply -auto-approve || true\nsed -i 's#logs/today.txt#logbook/today.txt#' main.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/halfbuilt\nsed -i 's#logs/today.txt#logbook/today.txt#' main.tf\nterraform destroy -auto-approve\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "remove-one",
+  "steps": [
+   {
+    "solve": "cd $R/dismantle\n$PY - <<'PY'\nimport re\np='main.tf'; t=open(p).read()\nt=re.sub(r'resource \"local_file\" \"old_boat\" \\{.*?\\n\\}\\n?', '', t, flags=re.S)\nopen(p,'w').write(t)\nPY\nterraform apply -auto-approve",
+    "wrong": "cd $R/dismantle\nterraform destroy -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "versions-lock",
+  "steps": [
+   {
+    "solve": "cd $R/versions\nterraform init || true\nterraform init -upgrade",
+    "wrong": "cd $R/versions\nsed -i 's/version     = \"2\\.[0-9]*\\.[0-9]*\"/version     = \"2.4.1\"/' .terraform.lock.hcl\nterraform init"
+   }
+  ]
+ },
+ {
+  "folder": "two-harbors",
+  "steps": [
+   {
+    "solve": "cd $R/harbors\ncat >> main.tf <<'HCL'\n\nprovider \"local\" {\n  alias = \"backup\"\n}\n\nresource \"local_file\" \"backup\" {\n  provider = local.backup\n  filename = \"${path.module}/backup.txt\"\n  content  = \"backup records\"\n}\nHCL\nterraform apply -auto-approve",
+    "wrong": "cd $R/harbors\ncat >> main.tf <<'HCL'\n\nresource \"local_file\" \"backup\" {\n  filename = \"${path.module}/backup.txt\"\n  content  = \"backup records\"\n}\nHCL\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "shipyard-in-trouble",
+  "steps": [
+   {
+    "solve": "cd $R/boss\nterraform init -upgrade\nsed -i 's/lifecycle = {/lifecycle {/' main.tf\nterraform fmt\nterraform validate\nterraform apply -auto-approve",
+    "wrong": "cd $R/boss\nrm -f .terraform.lock.hcl\nsed -i 's/lifecycle = {/lifecycle {/' main.tf\nterraform fmt\nterraform init\nterraform destroy -auto-approve\nterraform apply -auto-approve"
+   }
+  ]
+ }
+]

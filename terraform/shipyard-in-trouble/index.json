@@ -1,0 +1,24 @@
+{
+  "title": "🔴 Terraform BOSS · Shipyard in trouble",
+  "description": "Several hidden faults, one goal: a clean, valid, fully built shipyard.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Get it shipshape",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

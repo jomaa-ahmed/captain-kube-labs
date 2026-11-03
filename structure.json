@@ -11,6 +11,10 @@
     {
       "path": "helm",
       "title": "Captain Kube · Module 10 · Helm"
+    },
+    {
+      "path": "terraform",
+      "title": "The Shipwright · Terraform · Modules 0-4"
     }
   ]
 }

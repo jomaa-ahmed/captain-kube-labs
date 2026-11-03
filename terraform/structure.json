@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "path": "first-apply"
+    },
+    {
+      "path": "fix-the-blueprint"
+    },
+    {
+      "path": "references"
+    },
+    {
+      "path": "layout-and-fmt"
+    },
+    {
+      "path": "read-the-plan"
+    },
+    {
+      "path": "half-built"
+    },
+    {
+      "path": "remove-one"
+    },
+    {
+      "path": "versions-lock"
+    },
+    {
+      "path": "two-harbors"
+    },
+    {
+      "path": "shipyard-in-trouble"
+    }
+  ]
+}
