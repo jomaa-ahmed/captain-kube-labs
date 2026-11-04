@@ -234,5 +234,66 @@
     "wrong": "cd $R/order\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('content  = \"\"','content  = file(\"${path.module}/crew.txt\")').replace('locals.label','local.label')\nopen('main.tf','w').write(t)\nv=open('variables.tf').read().replace('flag = string','flag = optional(string, \"violet\")')\nopen('variables.tf','w').write(v)\no=open('terraform.tfvars').read().replace('masts = \"two\"','masts = 2')\nopen('terraform.tfvars','w').write(o)\nout=open('outputs.tf').read().replace('value = random_password.dock_code.result','value     = random_password.dock_code.result\\n  sensitive = true')\nopen('outputs.tf','w').write(out)\nPY\nterraform apply -auto-approve"
    }
   ]
+ },
+ {
+  "folder": "two-ships",
+  "steps": [
+   {
+    "solve": "cd $R/two\nsed -i 's/masts = 1/masts = var.env == \"prod\" ? 3 : 1/' main.tf\nterraform apply -var env=prod -auto-approve",
+    "wrong": "cd $R/two\nsed -i 's/masts = 1/masts = 3/' main.tf\nterraform apply -var env=prod -auto-approve"
+   },
+   {
+    "solve": "cd $R/two\ncat >> main.tf <<'HCL'\n\nlocals {\n  dock_code = upper(format(\"%s-%03d\", var.yard, var.dock_number))\n}\nHCL\nsed -i 's|value = .*|value = local.dock_code|' outputs.tf\nterraform apply -var env=prod -auto-approve\nterraform output -raw dock_code",
+    "wrong": "cd $R/two\ncat >> main.tf <<'HCL'\n\nlocals {\n  dock_code = \"DOCK-007\"\n}\nHCL\nsed -i 's|value = .*|value = local.dock_code|' outputs.tf\nterraform apply -var env=prod -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "bunk-shift",
+  "steps": [
+   {
+    "solve": "cd $R/bunks\ncat > main.tf <<'HCL'\nresource \"local_file\" \"bunk\" {\n  for_each = toset(var.crew)\n  filename = \"${path.module}/bunk-${each.key}.txt\"\n  content  = \"Bunk of ${each.value}\"\n}\nHCL\nterraform apply -auto-approve",
+    "wrong": "cd $R/bunks\ncat > main.tf <<'HCL'\nresource \"local_file\" \"bunk\" {\n  for_each = var.crew\n  filename = \"${path.module}/bunk-${each.key}.txt\"\n  content  = \"Bunk of ${each.value}\"\n}\nHCL\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/bunks\nsed -i 's/\"Ada\", \"Bo\", \"Cyrus\"/\"Ada\", \"Cyrus\"/' variables.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/bunks\nrm -f bunk-Bo.txt"
+   }
+  ]
+ },
+ {
+  "folder": "fleet-map",
+  "steps": [
+   {
+    "solve": "cd $R/fleet\ncat > main.tf <<'HCL'\nresource \"local_file\" \"mast\" {\n  for_each = var.masts\n  filename = \"${path.module}/${each.key}.txt\"\n  content  = \"${each.key}: ${each.value} masts\"\n}\nHCL\nterraform apply -auto-approve",
+    "wrong": "cd $R/fleet\ncat > main.tf <<'HCL'\nresource \"local_file\" \"kestrel\" {\n  filename = \"${path.module}/kestrel.txt\"\n  content  = \"kestrel: 2 masts\"\n}\n\nresource \"local_file\" \"osprey\" {\n  filename = \"${path.module}/osprey.txt\"\n  content  = \"osprey: 3 masts\"\n}\n\nresource \"local_file\" \"wren\" {\n  filename = \"${path.module}/wren.txt\"\n  content  = \"wren: 1 masts\"\n}\nHCL\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/fleet\ncat > outputs.tf <<'HCL'\noutput \"names\" {\n  value = [for name, m in var.masts : upper(name)]\n}\n\noutput \"files\" {\n  value = [for f in local_file.mast : f.filename]\n}\n\noutput \"big_ships\" {\n  value = [for name, m in var.masts : name if m > 1]\n}\nHCL\nterraform apply -auto-approve",
+    "wrong": "cd $R/fleet\ncat > outputs.tf <<'HCL'\noutput \"names\" {\n  value = [for name, m in var.masts : upper(name)]\n}\n\noutput \"files\" {\n  value = local_file.mast[*].filename\n}\n\noutput \"big_ships\" {\n  value = [for name, m in var.masts : name if m > 1]\n}\nHCL\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "crate",
+  "steps": [
+   {
+    "solve": "cd $R/crate\ncat > main.tf <<'HCL'\ndata \"archive_file\" \"crate\" {\n  type        = \"zip\"\n  output_path = \"${path.module}/crate.zip\"\n\n  dynamic \"source\" {\n    for_each = var.notes\n    content {\n      filename = source.key\n      content  = source.value\n    }\n  }\n}\n\noutput \"crate_size\" {\n  value = data.archive_file.crate.output_size\n}\nHCL\nterraform apply -auto-approve\nunzip -l crate.zip || true",
+    "wrong": "cd $R/crate\ncat > main.tf <<'HCL'\ndata \"archive_file\" \"crate\" {\n  type        = \"zip\"\n  output_path = \"${path.module}/crate.zip\"\n\n  source {\n    filename = \"hull.txt\"\n    content  = var.notes[\"hull.txt\"]\n  }\n  source {\n    filename = \"mast.txt\"\n    content  = var.notes[\"mast.txt\"]\n  }\n  source {\n    filename = \"sail.txt\"\n    content  = var.notes[\"sail.txt\"]\n  }\n}\n\noutput \"crate_size\" {\n  value = data.archive_file.crate.output_size\n}\nHCL\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/crate\ncat > terraform.tfvars <<'HCL'\nnotes = {\n  \"hull.txt\" = \"Oak, tarred twice\"\n  \"mast.txt\" = \"Pine, 20 m\"\n  \"sail.txt\" = \"Canvas, patched\"\n  \"deck.txt\" = \"Teak, scrubbed daily\"\n}\nHCL\nterraform apply -auto-approve",
+    "wrong": "cd $R/crate\ncat > terraform.tfvars <<'HCL'\nnotes = {\n  \"deck.txt\" = \"Teak, scrubbed daily\"\n}\nHCL\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "fleet-yard",
+  "steps": [
+   {
+    "solve": "cd $R/yard\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('for_each = var.crew','for_each = toset(var.crew)')\nt=t.replace('[\"violet\"]','\"violet\"')\nt=t.replace('shipname(var.env, var.ship)','upper(\"${var.env}-${var.ship}\")')\nt=t.replace('filename = each.key\\n      content  = each.value','filename = source.key\\n      content  = source.value')\nopen('main.tf','w').write(t)\no=open('outputs.tf').read().replace('local_file.bunk[*].filename','[for b in local_file.bunk : b.filename]')\nopen('outputs.tf','w').write(o)\nPY\nterraform validate\nterraform apply -auto-approve",
+    "wrong": "cd $R/yard\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('for_each = var.crew','count    = length(var.crew)')\nt=t.replace('bunk-${each.key}.txt','bunk-${var.crew[count.index]}.txt').replace('Bunk of ${each.value}','Bunk of ${var.crew[count.index]}')\nt=t.replace('[\"violet\"]','\"violet\"')\nt=t.replace('shipname(var.env, var.ship)','upper(\"${var.env}-${var.ship}\")')\nt=t.replace('filename = each.key\\n      content  = each.value','filename = source.key\\n      content  = source.value')\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve"
+   }
+  ]
  }
 ]

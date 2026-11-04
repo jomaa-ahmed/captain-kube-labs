@@ -22,8 +22,10 @@ ORDER = ["first-apply", "fix-the-blueprint", "references", "layout-and-fmt", "re
          "remove-one", "new-supplier", "versions-lock", "no-secrets", "two-harbors", "rules-on-the-door",
          "shipyard-in-trouble",
          "harbor-register", "fill-the-blanks", "type-check", "who-wins", "delivery-receipt", "margin-note",
-         "order-form"]
-BOSSES = {"shipyard-in-trouble", "order-form"}
+         "order-form",
+         "two-ships", "bunk-shift", "fleet-map", "crate",
+         "fleet-yard"]
+BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard"}
 
 PRE = """\
 R=${LABROOT:-/root}; PY=${PY:-python3}
@@ -1809,6 +1811,655 @@ terraform apply -auto-approve""",
     """,
 )
 
+# 6.1 + 6.2 · conditionals and functions ---------------------------------------------------------------------------
+tf_lab(
+    "two-ships",
+    "🟢 Terraform # · Two ships, one blueprint",
+    "A conditional for dev and prod, then built-in functions in a local.",
+    f"""
+    # Two ships, one blueprint
+
+    The blueprint in `/root/two` builds a ship file. Dev ships get **one** mast, prod ships need **three**,
+    and right now the number is written by hand.
+
+    Lessons: {L("6.1", "Expressions and conditionals")} · {L("6.2", "Built-in functions")}
+    """,
+    [
+        {"title": "Masts by environment",
+         "text": """
+         Change `local.masts` so it is **3 in prod** and **1 everywhere else**, then build prod:
+
+         ```
+         terraform apply -var env=prod
+         ```
+
+         `ship.txt` must say `Kestrel (prod) masts: 3`, and the same blueprint must still give 1 mast in dev.
+
+         💡 Try your expression first in `terraform console`.
+         """,
+         "hint": "condition ? value_if_true : value_if_false. Compare with `==`: `var.env == \"prod\" ? 3 : 1`.",
+         "solve": """cd $R/two
+sed -i 's/masts = 1/masts = var.env == "prod" ? 3 : 1/' main.tf
+terraform apply -var env=prod -auto-approve""",
+         "wrong": """cd $R/two
+sed -i 's/masts = 1/masts = 3/' main.tf
+terraform apply -var env=prod -auto-approve""",
+         "verify": """
+         cd $R/two
+         [ "$(attr . local_file.ship content)" = "Kestrel (prod) masts: 3" ] || exit 1
+         [ "$(echo 'local.masts' | terraform console -var env=dev 2>/dev/null)" = "1" ] || exit 1
+         [ "$(echo 'local.masts' | terraform console -var env=staging 2>/dev/null)" = "1" ] || exit 1
+         """},
+        {"title": "The dock code",
+         "text": """
+         The output `dock_code` prints `dock-7`. The harbor wants **`DOCK-007`**: capitals, and the number padded
+         to three digits.
+
+         Build it in a local named **`dock_code`** from `var.yard` and `var.dock_number`, output that local, and apply.
+         With `dock_number = 42` it must give `DOCK-042`.
+
+         ⛔ Terraform has no functions of your own: combine the built-in ones.
+         """,
+         "hint": "`format(\"%s-%03d\", var.yard, var.dock_number)` pads the number; wrap it in `upper(...)`. Test it: `terraform console -var dock_number=42`, then `local.dock_code`.",
+         "solve": """cd $R/two
+cat >> main.tf <<'HCL'
+
+locals {
+  dock_code = upper(format("%s-%03d", var.yard, var.dock_number))
+}
+HCL
+sed -i 's|value = .*|value = local.dock_code|' outputs.tf
+terraform apply -var env=prod -auto-approve
+terraform output -raw dock_code""",
+         "wrong": """cd $R/two
+cat >> main.tf <<'HCL'
+
+locals {
+  dock_code = "DOCK-007"
+}
+HCL
+sed -i 's|value = .*|value = local.dock_code|' outputs.tf
+terraform apply -var env=prod -auto-approve""",
+         "verify": """
+         cd $R/two
+         [ "$(terraform output -raw dock_code 2>/dev/null)" = "DOCK-007" ] || exit 1
+         [ "$(echo 'local.dock_code' | terraform console -var dock_number=42 2>/dev/null)" = '"DOCK-042"' ] || exit 1
+         """},
+    ],
+    done("""
+    `cond ? a : b` picks a value per environment, and both sides must have the same type. Functions are built in
+    only: you combine them (`upper(format(...))`) and name the result with a local. `terraform console` is the
+    place to try them.
+    """, "Terraform · The bunk shift"),
+    setup="""
+    mkdir -p $R/two && cd $R/two
+    """ + hcl("variables.tf", '''
+    variable "env" {
+      type    = string
+      default = "dev"
+    }
+
+    variable "ship" {
+      type    = string
+      default = "Kestrel"
+    }
+
+    variable "yard" {
+      type    = string
+      default = "dock"
+    }
+
+    variable "dock_number" {
+      type    = number
+      default = 7
+    }
+    ''') + hcl("main.tf", '''
+    locals {
+      masts = 1
+    }
+
+    resource "local_file" "ship" {
+      filename = "${path.module}/ship.txt"
+      content  = "${var.ship} (${var.env}) masts: ${local.masts}"
+    }
+    ''') + hcl("outputs.tf", '''
+    output "dock_code" {
+      value = "${var.yard}-${var.dock_number}"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# 6.3 + 6.4 · count -> for_each -------------------------------------------------------------------------------------
+tf_lab(
+    "bunk-shift",
+    "🟡 Terraform # · The bunk shift",
+    "Move numbered count copies to named for_each instances, then remove one crew member safely.",
+    f"""
+    # The bunk shift
+
+    In `/root/bunks`, one `local_file.bunk` per crew member is built with **count**: `bunk[0]`, `bunk[1]`, `bunk[2]`.
+    Bo is leaving at the next port.
+
+    See the problem first (this changes nothing):
+    ```
+    cd /root/bunks
+    terraform plan -var 'crew=["Ada","Cyrus"]'
+    ```
+    One person leaves, and two bunks change. 😬
+
+    Lessons: {L("6.3", "count")} · {L("6.4", "for_each")}
+    """,
+    [
+        {"title": "Name plates",
+         "text": """
+         Switch the bunks from `count` to **for_each**, so each bunk is keyed by its crew member's name:
+
+         - addresses `local_file.bunk["Ada"]`, `["Bo"]`, `["Cyrus"]`
+         - file `bunk-<name>.txt` containing `Bunk of <name>`
+
+         Apply it. Moving from count to for_each rebuilds the bunks once; that's fine here (Module 9 shows `moved`).
+         """,
+         "hint": "for_each takes a map or a set of strings, and `var.crew` is a list: `for_each = toset(var.crew)`. Inside, use `each.key` (or `each.value`, the same for a set).",
+         "solve": """cd $R/bunks
+cat > main.tf <<'HCL'
+resource "local_file" "bunk" {
+  for_each = toset(var.crew)
+  filename = "${path.module}/bunk-${each.key}.txt"
+  content  = "Bunk of ${each.value}"
+}
+HCL
+terraform apply -auto-approve""",
+         "wrong": """cd $R/bunks
+cat > main.tf <<'HCL'
+resource "local_file" "bunk" {
+  for_each = var.crew
+  filename = "${path.module}/bunk-${each.key}.txt"
+  content  = "Bunk of ${each.value}"
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/bunks
+         [ "$(st . | sort | tr '\\n' ' ')" = 'local_file.bunk["Ada"] local_file.bunk["Bo"] local_file.bunk["Cyrus"] ' ] || exit 1
+         [ "$(cat bunk-Bo.txt 2>/dev/null)" = "Bunk of Bo" ] || exit 1
+         [ ! -f bunk-0.txt ] || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Bo leaves",
+         "background": """
+         cd $R/bunks
+         touch -d @1577836800 bunk-Ada.txt bunk-Cyrus.txt 2>/dev/null || true
+         """,
+         "text": """
+         Now remove **Bo** from the crew list in `variables.tf` and apply.
+
+         Read the plan before you say yes: only Bo's bunk may go. Ada's and Cyrus's bunks must **not** be rebuilt.
+         """,
+         "hint": "Edit the default to `[\"Ada\", \"Cyrus\"]`, then `terraform apply`. The plan should say `1 to destroy` and nothing else.",
+         "solve": """cd $R/bunks
+sed -i 's/"Ada", "Bo", "Cyrus"/"Ada", "Cyrus"/' variables.tf
+terraform apply -auto-approve""",
+         "wrong": "cd $R/bunks\nrm -f bunk-Bo.txt",
+         "verify": """
+         cd $R/bunks
+         [ "$(st . | sort | tr '\\n' ' ')" = 'local_file.bunk["Ada"] local_file.bunk["Cyrus"] ' ] || exit 1
+         [ ! -f bunk-Bo.txt ] || exit 1
+         [ "$(stat -c %Y bunk-Ada.txt)" = "1577836800" ] && [ "$(stat -c %Y bunk-Cyrus.txt)" = "1577836800" ] || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    count knows positions, so removing from the middle shifts every index after it. for_each knows **keys**:
+    remove Bo and only `bunk["Bo"]` goes. A list goes in through `toset()`.
+    """, "Terraform · Fleet roll call"),
+    setup="""
+    mkdir -p $R/bunks && cd $R/bunks
+    """ + hcl("variables.tf", '''
+    variable "crew" {
+      type    = list(string)
+      default = ["Ada", "Bo", "Cyrus"]
+    }
+    ''') + hcl("main.tf", '''
+    resource "local_file" "bunk" {
+      count    = length(var.crew)
+      filename = "${path.module}/bunk-${count.index}.txt"
+      content  = "Bunk ${count.index}: ${var.crew[count.index]}"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# 6.4 map + 6.5 · for expressions and splat --------------------------------------------------------------------------
+tf_lab(
+    "fleet-map",
+    "🟡 Terraform # · Fleet roll call",
+    "for_each over a map, then outputs built with for expressions (where splat can't help).",
+    f"""
+    # Fleet roll call
+
+    In `/root/fleet`, `var.masts` is a map: ship name → number of masts. Nothing is built yet.
+
+    Lessons: {L("6.4", "for_each")} · {L("6.5", "for and splat")}
+    """,
+    [
+        {"title": "One file per ship",
+         "text": """
+         In `main.tf`, write **one** resource `local_file.mast` with `for_each` over `var.masts`:
+
+         - file `<ship>.txt`, for example `osprey.txt`
+         - content `<ship>: <masts> masts`, for example `osprey: 3 masts`
+
+         Apply it. Adding a ship to the map later must need no new block.
+         """,
+         "hint": "With a map, `each.key` is the ship and `each.value` the number: `filename = \"${path.module}/${each.key}.txt\"`.",
+         "solve": """cd $R/fleet
+cat > main.tf <<'HCL'
+resource "local_file" "mast" {
+  for_each = var.masts
+  filename = "${path.module}/${each.key}.txt"
+  content  = "${each.key}: ${each.value} masts"
+}
+HCL
+terraform apply -auto-approve""",
+         "wrong": """cd $R/fleet
+cat > main.tf <<'HCL'
+resource "local_file" "kestrel" {
+  filename = "${path.module}/kestrel.txt"
+  content  = "kestrel: 2 masts"
+}
+
+resource "local_file" "osprey" {
+  filename = "${path.module}/osprey.txt"
+  content  = "osprey: 3 masts"
+}
+
+resource "local_file" "wren" {
+  filename = "${path.module}/wren.txt"
+  content  = "wren: 1 masts"
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/fleet
+         [ "$(st . | sort | tr '\\n' ' ')" = 'local_file.mast["kestrel"] local_file.mast["osprey"] local_file.mast["wren"] ' ] || exit 1
+         [ "$(cat osprey.txt 2>/dev/null)" = "osprey: 3 masts" ] || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "The roll call",
+         "text": """
+         Add three outputs in `outputs.tf`, and apply:
+
+         | output | value |
+         |---|---|
+         | `names` | every ship name in capitals: `["KESTREL", "OSPREY", "WREN"]` |
+         | `files` | the `filename` of every `local_file.mast` |
+         | `big_ships` | the ships with **more than one** mast: `["kestrel", "osprey"]` |
+
+         ⛔ `local_file.mast` was made with for_each: think before you reach for `[*]`.
+         """,
+         "hint": "`[for name, m in var.masts : upper(name)]` · `[for f in local_file.mast : f.filename]` · `[for name, m in var.masts : name if m > 1]`. Splat only works on lists, sets and tuples; a for_each resource is a map.",
+         "solve": """cd $R/fleet
+cat > outputs.tf <<'HCL'
+output "names" {
+  value = [for name, m in var.masts : upper(name)]
+}
+
+output "files" {
+  value = [for f in local_file.mast : f.filename]
+}
+
+output "big_ships" {
+  value = [for name, m in var.masts : name if m > 1]
+}
+HCL
+terraform apply -auto-approve""",
+         "wrong": """cd $R/fleet
+cat > outputs.tf <<'HCL'
+output "names" {
+  value = [for name, m in var.masts : upper(name)]
+}
+
+output "files" {
+  value = local_file.mast[*].filename
+}
+
+output "big_ships" {
+  value = [for name, m in var.masts : name if m > 1]
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/fleet
+         terraform output -json 2>/dev/null | $PY -c "
+import json,sys,os
+o=json.load(sys.stdin)
+ok=(o['names']['value']==['KESTREL','OSPREY','WREN'] and o['big_ships']['value']==['kestrel','osprey']
+    and sorted(os.path.basename(f) for f in o['files']['value'])==['kestrel.txt','osprey.txt','wren.txt'])
+sys.exit(0 if ok else 1)" || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    for_each over a map gives `each.key` and `each.value`. `[for ... : ...]` transforms and `if` filters. Splat
+    `[*]` reads lists; a for_each resource is a map, so read it with a for expression (or `values(...)[*]`).
+    """, "Terraform · Pack the crate"),
+    setup="""
+    mkdir -p $R/fleet && cd $R/fleet
+    """ + hcl("variables.tf", '''
+    variable "masts" {
+      type = map(number)
+      default = {
+        kestrel = 2
+        osprey  = 3
+        wren    = 1
+      }
+    }
+    ''') + """
+    """ + hcl("versions.tf", '''
+    terraform {
+      required_providers {
+        local = {
+          source = "hashicorp/local"
+        }
+      }
+    }
+    ''') + """
+    echo '# one local_file "mast" per ship goes here' > main.tf
+    terraform init -input=false >/dev/null
+    """,
+)
+
+# 6.6 · dynamic blocks -----------------------------------------------------------------------------------------------
+tf_lab(
+    "crate",
+    "🟡 Terraform # · Pack the crate",
+    "Replace repeated nested blocks with one dynamic block, then add an item without touching the code.",
+    f"""
+    # Pack the crate
+
+    In `/root/crate`, the data source `archive_file` packs the ship's notes into `crate.zip`, one nested
+    `source` block per note. Someone forgot `sail.txt`, and every new note means another block by hand.
+
+    Lesson: {L("6.6", "dynamic blocks")}
+    """,
+    [
+        {"title": "One stencil",
+         "text": """
+         Replace the literal `source` blocks with **one** `dynamic "source"` block over `var.notes`, so the crate holds
+         **every** note (`hull.txt`, `mast.txt`, `sail.txt`). Apply and check: `unzip -l crate.zip`.
+         """,
+         "hint": "`dynamic \"source\" { for_each = var.notes  content { filename = source.key  content = source.value } }`. Inside, the item is named after the block label, not `each`.",
+         "solve": """cd $R/crate
+cat > main.tf <<'HCL'
+data "archive_file" "crate" {
+  type        = "zip"
+  output_path = "${path.module}/crate.zip"
+
+  dynamic "source" {
+    for_each = var.notes
+    content {
+      filename = source.key
+      content  = source.value
+    }
+  }
+}
+
+output "crate_size" {
+  value = data.archive_file.crate.output_size
+}
+HCL
+terraform apply -auto-approve
+unzip -l crate.zip || true""",
+         "wrong": """cd $R/crate
+cat > main.tf <<'HCL'
+data "archive_file" "crate" {
+  type        = "zip"
+  output_path = "${path.module}/crate.zip"
+
+  source {
+    filename = "hull.txt"
+    content  = var.notes["hull.txt"]
+  }
+  source {
+    filename = "mast.txt"
+    content  = var.notes["mast.txt"]
+  }
+  source {
+    filename = "sail.txt"
+    content  = var.notes["sail.txt"]
+  }
+}
+
+output "crate_size" {
+  value = data.archive_file.crate.output_size
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/crate
+         grep -q 'dynamic "source"' main.tf || exit 1
+         ! grep -Eq '^[[:space:]]*source[[:space:]]*\\{' main.tf || exit 1
+         $PY -c "import zipfile,sys; sys.exit(sorted(zipfile.ZipFile('crate.zip').namelist())!=['hull.txt','mast.txt','sail.txt'])" || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "A new note",
+         "background": """
+         cd $R/crate
+         md5sum main.tf > /tmp/crate_md5
+         """,
+         "text": """
+         The deck needs a note too: `deck.txt` saying `Teak, scrubbed daily`.
+
+         Put it in the crate **without editing `main.tf`**: set `notes` in a `terraform.tfvars` file (keep the three
+         other notes) and apply.
+         """,
+         "hint": "terraform.tfvars is loaded automatically. Write the whole map: `notes = { \"hull.txt\" = \"...\", ..., \"deck.txt\" = \"Teak, scrubbed daily\" }` (copy the three values from variables.tf).",
+         "solve": """cd $R/crate
+cat > terraform.tfvars <<'HCL'
+notes = {
+  "hull.txt" = "Oak, tarred twice"
+  "mast.txt" = "Pine, 20 m"
+  "sail.txt" = "Canvas, patched"
+  "deck.txt" = "Teak, scrubbed daily"
+}
+HCL
+terraform apply -auto-approve""",
+         "wrong": """cd $R/crate
+cat > terraform.tfvars <<'HCL'
+notes = {
+  "deck.txt" = "Teak, scrubbed daily"
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/crate
+         md5sum -c /tmp/crate_md5 >/dev/null 2>&1 || exit 1
+         $PY -c "
+import zipfile,sys
+z=zipfile.ZipFile('crate.zip')
+ok=sorted(z.namelist())==['deck.txt','hull.txt','mast.txt','sail.txt'] and z.read('deck.txt')==b'Teak, scrubbed daily'
+sys.exit(0 if ok else 1)" || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    `dynamic "LABEL"` repeats a nested block: `for_each` picks the items, `content` is one block, and the item is
+    `LABEL.key` / `LABEL.value`. The list now lives in data, so a new note is a new value, not new code.
+    """, "BOSS · The fleet yard"),
+    setup="""
+    mkdir -p $R/crate && cd $R/crate
+    """ + hcl("variables.tf", '''
+    variable "notes" {
+      type = map(string)
+      default = {
+        "hull.txt" = "Oak, tarred twice"
+        "mast.txt" = "Pine, 20 m"
+        "sail.txt" = "Canvas, patched"
+      }
+    }
+    ''') + hcl("main.tf", '''
+    data "archive_file" "crate" {
+      type        = "zip"
+      output_path = "${path.module}/crate.zip"
+
+      source {
+        filename = "hull.txt"
+        content  = var.notes["hull.txt"]
+      }
+      source {
+        filename = "mast.txt"
+        content  = var.notes["mast.txt"]
+      }
+    }
+
+    output "crate_size" {
+      value = data.archive_file.crate.output_size
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# boss (6.R) -------------------------------------------------------------------------------------------------------
+tf_lab(
+    "fleet-yard",
+    "🔴 Terraform BOSS · The fleet yard",
+    "Five dynamic-configuration faults in one fleet yard. Only the goal is given.",
+    f"""
+    # 🔴 BOSS · The fleet yard
+
+    The fleet yard in `/root/yard` won't even plan. You only get the **goal**.
+
+    Covers Module 6: {L("6.1", "conditionals")} · {L("6.2", "functions")} · {L("6.4", "for_each")} · {L("6.5", "for and splat")} · {L("6.6", "dynamic")}
+    """,
+    [
+        {"title": "Open the yard",
+         "text": """
+         In `/root/yard`, reach this state:
+         - `terraform validate` says Success and `terraform plan` says **No changes**
+         - one bunk per crew member, **keyed by name** (`local_file.bunk["Ada"]`...), each file saying `Bunk of <name>`
+         - `manifest.txt` says exactly `PROD-KESTREL: 3 masts, flag violet`
+         - the same blueprint in dev (`-var env=dev`) would give `DEV-KESTREL`, **1** mast and flag **grey**
+         - `crate.zip` holds every note in `var.notes`
+         - `terraform output bunks` lists every bunk's filename
+
+         ⛔ When someone leaves the crew later, only their bunk may be destroyed.
+         """,
+         "hint": "Go error by error: validate, then plan. Look for: a list given to for_each, a conditional whose two sides have different types, a function that doesn't exist, the wrong item name inside a dynamic block, and a splat on a for_each resource.",
+         "solve": """cd $R/yard
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('for_each = var.crew','for_each = toset(var.crew)')
+t=t.replace('["violet"]','"violet"')
+t=t.replace('shipname(var.env, var.ship)','upper("${var.env}-${var.ship}")')
+t=t.replace('filename = each.key\\n      content  = each.value','filename = source.key\\n      content  = source.value')
+open('main.tf','w').write(t)
+o=open('outputs.tf').read().replace('local_file.bunk[*].filename','[for b in local_file.bunk : b.filename]')
+open('outputs.tf','w').write(o)
+PY
+terraform validate
+terraform apply -auto-approve""",
+         "wrong": """cd $R/yard
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('for_each = var.crew','count    = length(var.crew)')
+t=t.replace('bunk-${each.key}.txt','bunk-${var.crew[count.index]}.txt').replace('Bunk of ${each.value}','Bunk of ${var.crew[count.index]}')
+t=t.replace('["violet"]','"violet"')
+t=t.replace('shipname(var.env, var.ship)','upper("${var.env}-${var.ship}")')
+t=t.replace('filename = each.key\\n      content  = each.value','filename = source.key\\n      content  = source.value')
+open('main.tf','w').write(t)
+PY
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/yard
+         terraform validate >/dev/null 2>&1 || exit 1
+         s=$(st . | sort | tr '\\n' ' ')
+         [ "$s" = 'data.archive_file.crate local_file.bunk["Ada"] local_file.bunk["Bo"] local_file.bunk["Cyrus"] local_file.manifest ' ] || exit 1
+         [ "$(cat bunk-Cyrus.txt 2>/dev/null)" = "Bunk of Cyrus" ] || exit 1
+         [ "$(cat manifest.txt 2>/dev/null)" = "PROD-KESTREL: 3 masts, flag violet" ] || exit 1
+         [ "$(echo 'local.label' | terraform console -var env=dev 2>/dev/null)" = '"DEV-KESTREL"' ] || exit 1
+         [ "$(echo 'local.masts' | terraform console -var env=dev 2>/dev/null)" = "1" ] || exit 1
+         [ "$(echo 'local.flag' | terraform console -var env=dev 2>/dev/null)" = '"grey"' ] || exit 1
+         $PY -c "import zipfile,sys; sys.exit(sorted(zipfile.ZipFile('crate.zip').namelist())!=['hull.txt','mast.txt'])" || exit 1
+         terraform output -json bunks 2>/dev/null | $PY -c "import json,sys,os; sys.exit(sorted(os.path.basename(f) for f in json.load(sys.stdin))!=['bunk-Ada.txt','bunk-Bo.txt','bunk-Cyrus.txt'])" || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    `toset()` for for_each, matching types in a conditional, built-in functions only, `source.value` inside
+    `dynamic "source"`, and a for expression where splat can't reach: the whole of Module 6 in one yard. ⚒
+    """),
+    setup="""
+    mkdir -p $R/yard && cd $R/yard
+    """ + hcl("variables.tf", '''
+    variable "env" {
+      type    = string
+      default = "prod"
+    }
+
+    variable "ship" {
+      type    = string
+      default = "Kestrel"
+    }
+
+    variable "crew" {
+      type    = list(string)
+      default = ["Ada", "Bo", "Cyrus"]
+    }
+
+    variable "notes" {
+      type = map(string)
+      default = {
+        "hull.txt" = "Oak"
+        "mast.txt" = "Pine"
+      }
+    }
+    ''') + hcl("main.tf", '''
+    locals {
+      masts = var.env == "prod" ? 3 : 1
+      flag  = var.env == "prod" ? ["violet"] : "grey"
+      label = shipname(var.env, var.ship)
+    }
+
+    resource "local_file" "bunk" {
+      for_each = var.crew
+      filename = "${path.module}/bunk-${each.key}.txt"
+      content  = "Bunk of ${each.value}"
+    }
+
+    resource "local_file" "manifest" {
+      filename = "${path.module}/manifest.txt"
+      content  = "${local.label}: ${local.masts} masts, flag ${local.flag}"
+    }
+
+    data "archive_file" "crate" {
+      type        = "zip"
+      output_path = "${path.module}/crate.zip"
+
+      dynamic "source" {
+        for_each = var.notes
+        content {
+          filename = each.key
+          content  = each.value
+        }
+      }
+    }
+    ''') + hcl("outputs.tf", '''
+    output "bunks" {
+      value = local_file.bunk[*].filename
+    }
+
+    output "crate_size" {
+      value = data.archive_file.crate.output_size
+    }
+    ''') + """
+    terraform init -input=false >/dev/null
+    """,
+)
+
 labkit.structure(TF, ORDER)
 with open(os.path.join(ROOT, "tools", "tf_spec.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump(SPEC, f, indent=1)
@@ -1821,7 +2472,9 @@ LINKS = {"0.2": "first-apply", "0.3": "first-apply", "3.1": "first-apply", "2.1"
          "3.2": "new-supplier", "4.1": "new-supplier", "4.4": "no-secrets", "4.6": "rules-on-the-door",
          "5.1": "harbor-register", "5.2": "harbor-register", "5.3": "fill-the-blanks", "5.4": "type-check",
          "5.5": "type-check", "5.6": "who-wins", "5.7": "delivery-receipt", "5.8": "margin-note",
-         "5.R": "order-form"}
+         "5.R": "order-form",
+         "6.1": "two-ships", "6.2": "two-ships", "6.3": "bunk-shift", "6.4": "bunk-shift", "6.5": "fleet-map",
+         "6.6": "crate", "6.R": "fleet-yard"}
 with open(os.path.join(ROOT, "labs-terraform.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump({"_comment": "Terraform lesson code -> Killercoda lab URL (lab_links.py --course terraform)",
                **{k: KC + v for k, v in LINKS.items()}}, f, indent=2, ensure_ascii=False)

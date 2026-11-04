@@ -59,6 +59,21 @@
     },
     {
       "path": "order-form"
+    },
+    {
+      "path": "two-ships"
+    },
+    {
+      "path": "bunk-shift"
+    },
+    {
+      "path": "fleet-map"
+    },
+    {
+      "path": "crate"
+    },
+    {
+      "path": "fleet-yard"
     }
   ]
 }
