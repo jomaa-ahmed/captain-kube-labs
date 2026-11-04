@@ -34,7 +34,8 @@ def run_file(path, env, cwd):
 
 def fresh(lab, base, env):
     root = os.path.join(base, lab)
-    shutil.rmtree(root, ignore_errors=True)
+    if os.path.exists(root):
+        shutil.rmtree(root, onerror=lambda f, p, _: (os.chmod(p, 0o700), f(p)))  # a lab may leave read-only files
     os.makedirs(root)
     e = dict(env, LABROOT=unix(root))
     r = run_file(os.path.join(TF, lab, "background.sh"), e, root)

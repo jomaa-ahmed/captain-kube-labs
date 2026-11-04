@@ -1,0 +1,24 @@
+{
+  "title": "🔴 Terraform BOSS · Dock rules",
+  "description": "Five dependency and lifecycle faults in one dock. Only the goal is given.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Open the dock",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

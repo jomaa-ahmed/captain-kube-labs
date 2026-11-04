@@ -74,6 +74,24 @@
     },
     {
       "path": "fleet-yard"
+    },
+    {
+      "path": "hidden-orders"
+    },
+    {
+      "path": "shipyard-rules"
+    },
+    {
+      "path": "timber-change"
+    },
+    {
+      "path": "order-inspector"
+    },
+    {
+      "path": "lookout"
+    },
+    {
+      "path": "dock-rules"
     }
   ]
 }

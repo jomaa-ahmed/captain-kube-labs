@@ -24,8 +24,10 @@ ORDER = ["first-apply", "fix-the-blueprint", "references", "layout-and-fmt", "re
          "harbor-register", "fill-the-blanks", "type-check", "who-wins", "delivery-receipt", "margin-note",
          "order-form",
          "two-ships", "bunk-shift", "fleet-map", "crate",
-         "fleet-yard"]
-BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard"}
+         "fleet-yard",
+         "hidden-orders", "shipyard-rules", "timber-change", "order-inspector", "lookout",
+         "dock-rules"]
+BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard", "dock-rules"}
 
 PRE = """\
 R=${LABROOT:-/root}; PY=${PY:-python3}
@@ -2460,6 +2462,705 @@ terraform apply -auto-approve""",
     """,
 )
 
+# 7.1 · depends_on -----------------------------------------------------------------------------------------------
+tf_lab(
+    "hidden-orders",
+    "🔧 Terraform # · Hidden orders",
+    "A data source reads a file before it exists: add depends_on, then replace it with a plain reference.",
+    f"""
+    # Hidden orders
+
+    In `/root/orders`, Terraform writes `orders.txt`, and a data source reads it to copy it into `crew.txt`.
+    Nothing in the code tells Terraform the file must exist first, so the very first plan fails.
+
+    Try it:
+    ```
+    cd /root/orders
+    terraform plan
+    ```
+
+    Lesson: {L("7.1", "depends_on")}
+    """,
+    [
+        {"title": "Wait for the orders",
+         "text": """
+         Tell Terraform that `data.local_file.orders` must wait for `local_file.orders`, then apply.
+
+         `crew.txt` must say `build 3 masts`.
+         """,
+         "hint": "Inside the data block: `depends_on = [local_file.orders]`. A whole resource, not one of its attributes.",
+         "solve": """cd $R/orders
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('data "local_file" "orders" {\\n  filename = "${path.module}/orders.txt"', 'data "local_file" "orders" {\\n  filename   = "${path.module}/orders.txt"\\n  depends_on = [local_file.orders]')
+open('main.tf','w').write(t)
+PY
+terraform apply -auto-approve""",
+         "wrong": """cd $R/orders
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('data "local_file" "orders" {\\n  filename = "${path.module}/orders.txt"', 'data "local_file" "orders" {\\n  filename   = "${path.module}/orders.txt"\\n  depends_on = [local_file.orders.content]')
+open('main.tf','w').write(t)
+PY
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/orders
+         grep -q 'depends_on' main.tf || exit 1
+         st . | grep -qx local_file.crew || exit 1
+         [ "$(cat crew.txt 2>/dev/null)" = "build 3 masts" ] || exit 1
+         """},
+        {"title": "References first",
+         "text": """
+         It works, but HashiCorp calls `depends_on` a last resort. Here a plain reference says the same thing.
+
+         Remove the data source and the `depends_on`, and let `local_file.crew` read **`local_file.orders.content`** directly.
+         Apply: `crew.txt` is unchanged, and the plan ends with **No changes**.
+         """,
+         "hint": "A reference is an implicit dependency: `content = local_file.orders.content`. Then delete the whole `data \"local_file\" \"orders\"` block.",
+         "solve": """cd $R/orders
+cat > main.tf <<'HCL'
+resource "local_file" "orders" {
+  filename = "${path.module}/orders.txt"
+  content  = "build 3 masts"
+}
+
+resource "local_file" "crew" {
+  filename = "${path.module}/crew.txt"
+  content  = local_file.orders.content
+}
+HCL
+terraform apply -auto-approve""",
+         "wrong": """cd $R/orders
+sed -i '/depends_on/d' main.tf
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/orders
+         ! grep -q 'depends_on' main.tf || exit 1
+         ! grep -q '^data ' main.tf || exit 1
+         ! st . | grep -q '^data\\.' || exit 1
+         [ "$(cat crew.txt 2>/dev/null)" = "build 3 masts" ] || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    A data source is read during plan, so it can't see a file that apply hasn't written yet: `depends_on` makes it
+    wait. But a reference (`local_file.orders.content`) is an implicit dependency that does the same job, and it's
+    clearer. References first, `depends_on` for what no reference can show.
+    """, "Terraform · Shipyard rules"),
+    setup="""
+    mkdir -p $R/orders && cd $R/orders
+    """ + hcl("main.tf", '''
+    resource "local_file" "orders" {
+      filename = "${path.module}/orders.txt"
+      content  = "build 3 masts"
+    }
+
+    data "local_file" "orders" {
+      filename = "${path.module}/orders.txt"
+    }
+
+    resource "local_file" "crew" {
+      filename = "${path.module}/crew.txt"
+      content  = data.local_file.orders.content
+    }
+    ''') + """
+    terraform init -input=false >/dev/null
+    """,
+)
+
+# 7.2 + 7.3 · lifecycle -----------------------------------------------------------------------------------------------
+tf_lab(
+    "shipyard-rules",
+    "🟡 Terraform # · Shipyard rules",
+    "create_before_destroy for a replacement, prevent_destroy for the ledger, ignore_changes for the paint.",
+    f"""
+    # Shipyard rules
+
+    `/root/rules` builds three things: a **dock** (replaced whenever `var.build` changes), the **ledger** and the
+    **hull**. Each needs a different shipyard rule, in its `lifecycle` block.
+
+    Lessons: {L("7.2", "create_before_destroy")} · {L("7.3", "prevent_destroy and ignore_changes")}
+    """,
+    [
+        {"title": "New dock first",
+         "text": """
+         Make dock replacements **create the new dock first**, then destroy the old one.
+
+         Then set the default of `build` to `"v2"` in `variables.tf` and apply. Check with
+         `terraform plan -var build=v3`: it must show `+/- create replacement and then destroy`.
+         """,
+         "hint": "`lifecycle { create_before_destroy = true }` inside `terraform_data.dock`. Lifecycle values must be literals.",
+         "solve": """cd $R/rules
+sed -i 's|  triggers_replace = var.build|&\\n\\n  lifecycle {\\n    create_before_destroy = true\\n  }|' main.tf
+sed -i 's/default = "v1"/default = "v2"/' variables.tf
+terraform apply -auto-approve
+terraform plan -var build=v3""",
+         "wrong": """cd $R/rules
+sed -i 's/default = "v1"/default = "v2"/' variables.tf
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/rules
+         [ "$(attr . terraform_data.dock triggers_replace)" = "v2" ] || exit 1
+         terraform plan -var build=v3 -no-color -lock=false 2>&1 | grep -q '+/- create replacement and then destroy' || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Never scrap the ledger",
+         "text": """
+         The ledger must survive any `terraform destroy`. Seal it so Terraform **refuses** to destroy it, and apply.
+
+         Check: `terraform plan -destroy` must stop with `Instance cannot be destroyed`.
+         """,
+         "hint": "`lifecycle { prevent_destroy = true }` inside `local_file.ledger`.",
+         "solve": """cd $R/rules
+sed -i 's|  content  = "every ship we ever built"|&\\n\\n  lifecycle {\\n    prevent_destroy = true\\n  }|' main.tf
+terraform apply -auto-approve
+terraform plan -destroy || true""",
+         "wrong": "cd $R/rules\nchmod 444 ledger.txt",
+         "verify": """
+         cd $R/rules
+         [ -f ledger.txt ] || exit 1
+         terraform plan -destroy -no-color -lock=false 2>&1 | grep -q 'Instance cannot be destroyed' || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Leave the paint alone",
+         "text": """
+         The harbor repaints the hull whenever it likes and passes the colour in `var.paint`. Terraform must
+         **stop updating** the hull's `input` after it's built, but keep using `var.paint` when it creates the hull.
+
+         Check: `terraform plan -var paint=red` must say **No changes**.
+         """,
+         "hint": "`lifecycle { ignore_changes = [input] }` inside `terraform_data.hull`. Keep `paint = var.paint` in the input.",
+         "solve": """cd $R/rules
+sed -i 's|  input = { paint = var.paint, masts = 3 }|&\\n\\n  lifecycle {\\n    ignore_changes = [input]\\n  }|' main.tf
+terraform plan -var paint=red""",
+         "wrong": """cd $R/rules
+sed -i 's|paint = var.paint|paint = "blue"|' main.tf
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/rules
+         grep -q 'paint = var.paint' main.tf || exit 1
+         terraform plan -var paint=red -input=false -detailed-exitcode -lock=false >/dev/null 2>&1 || exit 1
+         terraform show -json | $PY -c "
+import json,sys
+d=json.load(sys.stdin)
+r=[x for x in d['values']['root_module']['resources'] if x['address']=='terraform_data.hull'][0]
+sys.exit(0 if r['values']['input']['paint']=='blue' else 1)" || exit 1
+         """},
+    ],
+    done("""
+    Three rules, three lifecycle arguments: `create_before_destroy` flips the replacement order (`+/-`),
+    `prevent_destroy` refuses destroys and replacements (until someone deletes the block), and `ignore_changes`
+    uses a value on create but never updates it.
+    """, "Terraform · Timber change"),
+    setup="""
+    mkdir -p $R/rules && cd $R/rules
+    """ + hcl("variables.tf", '''
+    variable "build" {
+      type    = string
+      default = "v1"
+    }
+
+    variable "paint" {
+      type    = string
+      default = "blue"
+    }
+    ''') + hcl("main.tf", '''
+    resource "terraform_data" "dock" {
+      triggers_replace = var.build
+    }
+
+    resource "local_file" "ledger" {
+      filename = "${path.module}/ledger.txt"
+      content  = "every ship we ever built"
+    }
+
+    resource "terraform_data" "hull" {
+      input = { paint = var.paint, masts = 3 }
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# 7.4 · replace_triggered_by + -replace --------------------------------------------------------------------------------
+tf_lab(
+    "timber-change",
+    "🟡 Terraform # · Timber change",
+    "Rebuild the hull when the recipe changes, then rebuild it once with -replace.",
+    f"""
+    # Timber change
+
+    In `/root/timber`, the hull doesn't mention the recipe, so when `var.recipe` changes from oak to pine,
+    Terraform does nothing. The shipwright's rule: new timber, new hull.
+
+    Lesson: {L("7.4", "replace_triggered_by")}
+    """,
+    [
+        {"title": "New timber, new hull",
+         "text": """
+         Make `local_file.hull` be **replaced** whenever `var.recipe` changes. Don't put the recipe in the hull's content.
+
+         Check: `terraform plan -var recipe=pine` must say
+         `local_file.hull will be replaced due to changes in replace_triggered_by`. Apply with the default (oak) at the end.
+         """,
+         "hint": "replace_triggered_by only takes resources. Hold the value in one: `resource \"terraform_data\" \"recipe\" { input = var.recipe }`, then `replace_triggered_by = [terraform_data.recipe]` in the hull's lifecycle.",
+         "solve": """cd $R/timber
+cat > main.tf <<'HCL'
+resource "terraform_data" "recipe" {
+  input = var.recipe
+}
+
+resource "local_file" "hull" {
+  filename = "${path.module}/hull.txt"
+  content  = "hull"
+
+  lifecycle {
+    replace_triggered_by = [terraform_data.recipe]
+  }
+}
+HCL
+terraform apply -auto-approve
+terraform plan -var recipe=pine""",
+         "wrong": """cd $R/timber
+cat > main.tf <<'HCL'
+resource "local_file" "hull" {
+  filename = "${path.module}/hull.txt"
+  content  = "hull"
+
+  lifecycle {
+    replace_triggered_by = [var.recipe]
+  }
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/timber
+         ! grep -q 'content.*recipe' main.tf || exit 1
+         terraform plan -var recipe=pine -no-color -lock=false 2>&1 | grep -q 'local_file.hull will be replaced due to changes in replace_triggered_by' || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Rebuild it once",
+         "background": """
+         cd $R/timber
+         touch -d @1577836800 hull.txt 2>/dev/null || true
+         md5sum *.tf > /tmp/timber_md5
+         """,
+         "text": """
+         A crack in the hull: rebuild it **now**, once, without changing any code and without touching the recipe.
+         Look at the plan first.
+         """,
+         "hint": "`terraform apply -replace=local_file.hull`. (`terraform taint` is deprecated, and it only marks the resource: nothing is rebuilt until the next apply.)",
+         "solve": "cd $R/timber\nterraform apply -replace=local_file.hull -auto-approve",
+         "wrong": "cd $R/timber\nterraform taint local_file.hull",
+         "verify": """
+         cd $R/timber
+         md5sum -c /tmp/timber_md5 >/dev/null 2>&1 || exit 1
+         [ -f hull.txt ] || exit 1
+         [ "$(stat -c %Y hull.txt)" != "1577836800" ] || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    `replace_triggered_by` takes resources (or their attributes), so a variable goes through `terraform_data`.
+    For a one-time rebuild there's `-replace=ADDRESS`, and you see the plan before anything happens.
+    """, "Terraform · The order inspector"),
+    setup="""
+    mkdir -p $R/timber && cd $R/timber
+    """ + hcl("variables.tf", '''
+    variable "recipe" {
+      type    = string
+      default = "oak"
+    }
+    ''') + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "hull"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# 7.5 + 7.6 · validation and conditions ---------------------------------------------------------------------------------
+tf_lab(
+    "order-inspector",
+    "🟡 Terraform # · The order inspector",
+    "Variable validation for bad input, then a precondition for a bad combination.",
+    f"""
+    # The order inspector
+
+    In `/root/inspect`, anyone can order a ship for `env = "staging"` with nine masts, and Terraform happily plans it.
+    Time for an inspector.
+
+    Lessons: {L("7.5", "Variable validation")} · {L("7.6", "Preconditions and postconditions")}
+    """,
+    [
+        {"title": "At the order desk",
+         "text": """
+         Add validation rules in `variables.tf`:
+         - `env` accepts only `dev` or `prod`
+         - `masts` accepts only 1 to 5
+
+         Each with a clear `error_message`. A bad value must stop `terraform plan` with `Invalid value for variable`;
+         `terraform plan -var env=prod -var masts=3` must still work.
+         """,
+         "hint": "`validation { condition = contains([\"dev\", \"prod\"], var.env)  error_message = \"...\" }`. The condition is true for a GOOD value. For masts: `var.masts >= 1 && var.masts <= 5`.",
+         "solve": """cd $R/inspect
+cat > variables.tf <<'HCL'
+variable "env" {
+  type    = string
+  default = "dev"
+
+  validation {
+    condition     = contains(["dev", "prod"], var.env)
+    error_message = "env must be dev or prod."
+  }
+}
+
+variable "masts" {
+  type    = number
+  default = 2
+
+  validation {
+    condition     = var.masts >= 1 && var.masts <= 5
+    error_message = "A ship has 1 to 5 masts."
+  }
+}
+
+variable "crew" {
+  type    = list(string)
+  default = ["Ada", "Bo"]
+}
+HCL
+terraform plan -var env=staging || true""",
+         "wrong": """cd $R/inspect
+cat > variables.tf <<'HCL'
+variable "env" {
+  type    = string
+  default = "dev"
+
+  validation {
+    condition     = var.env != "staging"
+    error_message = "No staging."
+  }
+}
+
+variable "masts" {
+  type    = number
+  default = 2
+
+  validation {
+    condition     = var.masts <= 5
+    error_message = "Too many masts."
+  }
+}
+
+variable "crew" {
+  type    = list(string)
+  default = ["Ada", "Bo"]
+}
+HCL""",
+         "verify": """
+         cd $R/inspect
+         bad() { terraform plan -input=false -lock=false -no-color "$@" 2>&1 | grep -q 'Invalid value for variable'; }
+         bad -var env=staging || exit 1
+         bad -var env=test || exit 1
+         bad -var masts=9 || exit 1
+         bad -var masts=0 || exit 1
+         terraform plan -input=false -lock=false -var env=prod -var masts=2 >/dev/null 2>&1 || exit 1
+         """},
+        {"title": "Before the build",
+         "text": """
+         Each mast needs at least one crew member. Add a **precondition** to `local_file.ship` so that a plan with more
+         masts than crew stops with `Resource precondition failed`.
+
+         With the default crew (Ada, Bo): `-var masts=2` plans fine, `-var masts=3` must fail.
+         """,
+         "hint": "Inside the resource: `lifecycle { precondition { condition = length(var.crew) >= var.masts  error_message = \"...\" } }`.",
+         "solve": """cd $R/inspect
+sed -i 's|  content  = "${var.env}: ${var.masts} masts, ${length(var.crew)} crew"|&\\n\\n  lifecycle {\\n    precondition {\\n      condition     = length(var.crew) >= var.masts\\n      error_message = "Each mast needs at least one crew member."\\n    }\\n  }|' main.tf
+terraform plan -var masts=3 || true""",
+         "wrong": """cd $R/inspect
+$PY - <<'PY'
+t=open('variables.tf').read()
+t=t.replace('error_message = "A ship has 1 to 5 masts."','error_message = "A ship has 1 to 5 masts."\\n  }\\n\\n  validation {\\n    condition     = var.masts <= length(var.crew)\\n    error_message = "Not enough crew."',1)
+open('variables.tf','w').write(t)
+PY""",
+         "verify": """
+         cd $R/inspect
+         terraform plan -input=false -lock=false -no-color -var masts=3 2>&1 | grep -q 'Resource precondition failed' || exit 1
+         terraform plan -input=false -lock=false -var masts=2 >/dev/null 2>&1 || exit 1
+         """},
+    ],
+    done("""
+    Validation checks one input, at the door, with a condition that's true for good values. A precondition checks
+    an assumption about a resource or a combination of values (crew vs masts). Both stop the plan.
+    """, "Terraform · The lookout"),
+    setup="""
+    mkdir -p $R/inspect && cd $R/inspect
+    """ + hcl("variables.tf", '''
+    variable "env" {
+      type    = string
+      default = "dev"
+    }
+
+    variable "masts" {
+      type    = number
+      default = 2
+    }
+
+    variable "crew" {
+      type    = list(string)
+      default = ["Ada", "Bo"]
+    }
+    ''') + hcl("main.tf", '''
+    resource "local_file" "ship" {
+      filename = "${path.module}/ship.txt"
+      content  = "${var.env}: ${var.masts} masts, ${length(var.crew)} crew"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null
+    """,
+)
+
+# 7.7 + 7.8 · check blocks and provisioners -----------------------------------------------------------------------------
+tf_lab(
+    "lookout",
+    "🔧 Terraform # · The lookout",
+    "A check block that warns without stopping, then a tainted resource from a failed provisioner.",
+    f"""
+    # The lookout
+
+    In `/root/lookout`, the ship's log is written from `var.weather`. And something went wrong at launch.
+
+    Lessons: {L("7.7", "check blocks")} · {L("7.8", "Provisioners")}
+    """,
+    [
+        {"title": "Storm warning",
+         "text": """
+         Add a `check` block named `calm_seas` that **warns** when the log mentions `storm`, but never stops the run.
+
+         - `terraform plan -var 'weather=storm ahead'` must succeed **and** show `Check block assertion failed`
+         - `terraform plan` (calm weather) must show no warning
+         """,
+         "hint": "`check \"calm_seas\" { assert { condition = !strcontains(local_file.log.content, \"storm\")  error_message = \"...\" } }`, at the top level, not inside the resource.",
+         "solve": """cd $R/lookout
+cat >> main.tf <<'HCL'
+
+check "calm_seas" {
+  assert {
+    condition     = !strcontains(local_file.log.content, "storm")
+    error_message = "The log mentions a storm."
+  }
+}
+HCL
+terraform plan -var 'weather=storm ahead'""",
+         "wrong": """cd $R/lookout
+sed -i 's|  content  = var.weather|&\\n\\n  lifecycle {\\n    precondition {\\n      condition     = !strcontains(var.weather, "storm")\\n      error_message = "Storm."\\n    }\\n  }|' main.tf""",
+         "verify": """
+         cd $R/lookout
+         grep -q 'check "calm_seas"' main.tf || exit 1
+         out=$(terraform plan -input=false -lock=false -no-color -var 'weather=storm ahead' 2>&1) || exit 1
+         echo "$out" | grep -q 'Check block assertion failed' || exit 1
+         ! terraform plan -input=false -lock=false -no-color 2>&1 | grep -q 'Check block assertion failed' || exit 1
+         """},
+        {"title": "A failed launch",
+         "background": """
+         cd $R/lookout
+         cat > launch.tf <<'HCL'
+         resource "terraform_data" "launch" {
+           provisioner "local-exec" {
+             command = "exit 1"
+           }
+         }
+         HCL
+         sed -i 's/^         //' launch.tf
+         terraform apply -auto-approve -input=false >/dev/null 2>&1 || true
+         """,
+         "text": """
+         Someone added `launch.tf`: a `terraform_data.launch` with a `local-exec` provisioner. The apply failed.
+
+         Run `terraform plan` and read what Terraform now thinks of `terraform_data.launch`. Then fix the
+         command (make it `echo launched`) and apply, so the plan ends with **No changes**.
+
+         ⛔ `terraform untaint` alone hides the problem: the command would still fail next time.
+         """,
+         "hint": "A failed creation-time provisioner marks the resource **tainted**, so the next apply replaces it. Fix the command in launch.tf, then `terraform apply`.",
+         "solve": "cd $R/lookout\nsed -i 's/command = \"exit 1\"/command = \"echo launched\"/' launch.tf\nterraform apply -auto-approve",
+         "wrong": "cd $R/lookout\nterraform untaint terraform_data.launch",
+         "verify": """
+         cd $R/lookout
+         ! grep -q 'exit 1' launch.tf || exit 1
+         st . | grep -qx terraform_data.launch || exit 1
+         terraform show -json | $PY -c "
+import json,sys
+d=json.load(sys.stdin)
+r=[x for x in d['values']['root_module']['resources'] if x['address']=='terraform_data.launch']
+sys.exit(0 if r and not r[0].get('tainted') else 1)" || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    A `check` block only warns: the run goes on, so it's for watching, not blocking. A failed creation-time
+    provisioner taints the resource: Terraform replaces it on the next apply. And provisioners stay the last resort.
+    """, "BOSS · Dock rules"),
+    setup="""
+    mkdir -p $R/lookout && cd $R/lookout
+    """ + hcl("variables.tf", '''
+    variable "weather" {
+      type    = string
+      default = "calm seas"
+    }
+    ''') + hcl("main.tf", '''
+    resource "local_file" "log" {
+      filename = "${path.module}/log.txt"
+      content  = var.weather
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# boss (7.R) -------------------------------------------------------------------------------------------------------
+tf_lab(
+    "dock-rules",
+    "🔴 Terraform BOSS · Dock rules",
+    "Five dependency and lifecycle faults in one dock. Only the goal is given.",
+    f"""
+    # 🔴 BOSS · Dock rules
+
+    The dock in `/root/dock` won't even initialise, and one rule nobody wrote down is missing. You only get the **goal**.
+
+    Covers Module 7: {L("7.1", "depends_on")} · {L("7.2", "create_before_destroy")} · {L("7.3", "prevent_destroy")} · {L("7.4", "replace_triggered_by")} · {L("7.5", "validation")}
+    """,
+    [
+        {"title": "Open the dock",
+         "text": """
+         In `/root/dock`, reach this state:
+         - `terraform init` and `terraform validate` succeed, apply works, and `terraform plan` says **No changes**
+         - `crew.txt` holds the same text as `orders.txt` (the data source stays)
+         - `env` only accepts `dev` or `prod`: `-var env=staging` stops the plan
+         - the hull is **replaced** whenever `var.recipe` changes
+         - a dock replacement (`-var build=v9`) **creates the new dock first**
+         - `terraform plan -destroy` stops with `Instance cannot be destroyed` (the ledger)
+         """,
+         "hint": "Go error by error: init, validate, then plan. Look for: depends_on on an attribute, a variable in replace_triggered_by, a variable in lifecycle, a validation condition written backwards, and a seal nobody added.",
+         "solve": """cd $R/dock
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('depends_on = [local_file.orders.content]','depends_on = [local_file.orders]')
+t=t.replace('replace_triggered_by = [var.recipe]','replace_triggered_by = [terraform_data.recipe]')
+t=t.replace('create_before_destroy = var.safe','create_before_destroy = true')
+t=t.replace('content  = "every ship we ever built"','content  = "every ship we ever built"\\n\\n  lifecycle {\\n    prevent_destroy = true\\n  }')
+open('main.tf','w').write(t)
+v=open('variables.tf').read().replace('!contains(["dev", "prod"], var.env)','contains(["dev", "prod"], var.env)')
+open('variables.tf','w').write(v)
+PY
+terraform init
+terraform validate
+terraform apply -auto-approve""",
+         "wrong": """cd $R/dock
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('depends_on = [local_file.orders.content]','depends_on = [local_file.orders]')
+t=t.replace('replace_triggered_by = [var.recipe]','replace_triggered_by = [terraform_data.recipe]')
+t=t.replace('create_before_destroy = var.safe','create_before_destroy = true')
+open('main.tf','w').write(t)
+v=open('variables.tf').read().replace('!contains(["dev", "prod"], var.env)','contains(["dev", "prod"], var.env)')
+open('variables.tf','w').write(v)
+PY
+terraform init
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/dock
+         terraform validate >/dev/null 2>&1 || exit 1
+         st . | grep -qx data.local_file.orders || exit 1
+         [ "$(cat crew.txt 2>/dev/null)" = "$(cat orders.txt 2>/dev/null)" ] && [ -s crew.txt ] || exit 1
+         p() { terraform plan -input=false -lock=false -no-color "$@" 2>&1; }
+         p -var env=staging | grep -q 'Invalid value for variable' || exit 1
+         p -var recipe=pine | grep -q 'local_file.hull will be replaced due to changes in replace_triggered_by' || exit 1
+         p -var build=v9 | grep -q '+/- create replacement and then destroy' || exit 1
+         p -destroy | grep -q 'Instance cannot be destroyed' || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    A whole resource in `depends_on`, a `terraform_data` behind `replace_triggered_by`, literals in `lifecycle`, a
+    validation condition that's true for good values, and a `prevent_destroy` seal: the whole of Module 7 in one dock. ⚒
+    """),
+    setup="""
+    mkdir -p $R/dock && cd $R/dock
+    """ + hcl("variables.tf", '''
+    variable "env" {
+      type    = string
+      default = "prod"
+
+      validation {
+        condition     = !contains(["dev", "prod"], var.env)
+        error_message = "env must be dev or prod."
+      }
+    }
+
+    variable "recipe" {
+      type    = string
+      default = "oak"
+    }
+
+    variable "build" {
+      type    = string
+      default = "v1"
+    }
+
+    variable "safe" {
+      type    = bool
+      default = true
+    }
+    ''') + hcl("main.tf", '''
+    resource "local_file" "orders" {
+      filename = "${path.module}/orders.txt"
+      content  = "${var.env}: build 3 masts"
+    }
+
+    data "local_file" "orders" {
+      filename   = "${path.module}/orders.txt"
+      depends_on = [local_file.orders.content]
+    }
+
+    resource "local_file" "crew" {
+      filename = "${path.module}/crew.txt"
+      content  = data.local_file.orders.content
+    }
+
+    resource "terraform_data" "recipe" {
+      input = var.recipe
+    }
+
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "hull"
+
+      lifecycle {
+        replace_triggered_by = [var.recipe]
+      }
+    }
+
+    resource "terraform_data" "dock" {
+      triggers_replace = var.build
+
+      lifecycle {
+        create_before_destroy = var.safe
+      }
+    }
+
+    resource "local_file" "ledger" {
+      filename = "${path.module}/ledger.txt"
+      content  = "every ship we ever built"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null
+    """,
+)
+
 labkit.structure(TF, ORDER)
 with open(os.path.join(ROOT, "tools", "tf_spec.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump(SPEC, f, indent=1)
@@ -2474,7 +3175,9 @@ LINKS = {"0.2": "first-apply", "0.3": "first-apply", "3.1": "first-apply", "2.1"
          "5.5": "type-check", "5.6": "who-wins", "5.7": "delivery-receipt", "5.8": "margin-note",
          "5.R": "order-form",
          "6.1": "two-ships", "6.2": "two-ships", "6.3": "bunk-shift", "6.4": "bunk-shift", "6.5": "fleet-map",
-         "6.6": "crate", "6.R": "fleet-yard"}
+         "6.6": "crate", "6.R": "fleet-yard",
+         "7.1": "hidden-orders", "7.2": "shipyard-rules", "7.3": "shipyard-rules", "7.4": "timber-change",
+         "7.5": "order-inspector", "7.6": "order-inspector", "7.7": "lookout", "7.8": "lookout", "7.R": "dock-rules"}
 with open(os.path.join(ROOT, "labs-terraform.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump({"_comment": "Terraform lesson code -> Killercoda lab URL (lab_links.py --course terraform)",
                **{k: KC + v for k, v in LINKS.items()}}, f, indent=2, ensure_ascii=False)

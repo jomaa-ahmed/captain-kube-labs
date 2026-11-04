@@ -295,5 +295,83 @@
     "wrong": "cd $R/yard\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('for_each = var.crew','count    = length(var.crew)')\nt=t.replace('bunk-${each.key}.txt','bunk-${var.crew[count.index]}.txt').replace('Bunk of ${each.value}','Bunk of ${var.crew[count.index]}')\nt=t.replace('[\"violet\"]','\"violet\"')\nt=t.replace('shipname(var.env, var.ship)','upper(\"${var.env}-${var.ship}\")')\nt=t.replace('filename = each.key\\n      content  = each.value','filename = source.key\\n      content  = source.value')\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve"
    }
   ]
+ },
+ {
+  "folder": "hidden-orders",
+  "steps": [
+   {
+    "solve": "cd $R/orders\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('data \"local_file\" \"orders\" {\\n  filename = \"${path.module}/orders.txt\"', 'data \"local_file\" \"orders\" {\\n  filename   = \"${path.module}/orders.txt\"\\n  depends_on = [local_file.orders]')\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve",
+    "wrong": "cd $R/orders\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('data \"local_file\" \"orders\" {\\n  filename = \"${path.module}/orders.txt\"', 'data \"local_file\" \"orders\" {\\n  filename   = \"${path.module}/orders.txt\"\\n  depends_on = [local_file.orders.content]')\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/orders\ncat > main.tf <<'HCL'\nresource \"local_file\" \"orders\" {\n  filename = \"${path.module}/orders.txt\"\n  content  = \"build 3 masts\"\n}\n\nresource \"local_file\" \"crew\" {\n  filename = \"${path.module}/crew.txt\"\n  content  = local_file.orders.content\n}\nHCL\nterraform apply -auto-approve",
+    "wrong": "cd $R/orders\nsed -i '/depends_on/d' main.tf\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "shipyard-rules",
+  "steps": [
+   {
+    "solve": "cd $R/rules\nsed -i 's|  triggers_replace = var.build|&\\n\\n  lifecycle {\\n    create_before_destroy = true\\n  }|' main.tf\nsed -i 's/default = \"v1\"/default = \"v2\"/' variables.tf\nterraform apply -auto-approve\nterraform plan -var build=v3",
+    "wrong": "cd $R/rules\nsed -i 's/default = \"v1\"/default = \"v2\"/' variables.tf\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/rules\nsed -i 's|  content  = \"every ship we ever built\"|&\\n\\n  lifecycle {\\n    prevent_destroy = true\\n  }|' main.tf\nterraform apply -auto-approve\nterraform plan -destroy || true",
+    "wrong": "cd $R/rules\nchmod 444 ledger.txt"
+   },
+   {
+    "solve": "cd $R/rules\nsed -i 's|  input = { paint = var.paint, masts = 3 }|&\\n\\n  lifecycle {\\n    ignore_changes = [input]\\n  }|' main.tf\nterraform plan -var paint=red",
+    "wrong": "cd $R/rules\nsed -i 's|paint = var.paint|paint = \"blue\"|' main.tf\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "timber-change",
+  "steps": [
+   {
+    "solve": "cd $R/timber\ncat > main.tf <<'HCL'\nresource \"terraform_data\" \"recipe\" {\n  input = var.recipe\n}\n\nresource \"local_file\" \"hull\" {\n  filename = \"${path.module}/hull.txt\"\n  content  = \"hull\"\n\n  lifecycle {\n    replace_triggered_by = [terraform_data.recipe]\n  }\n}\nHCL\nterraform apply -auto-approve\nterraform plan -var recipe=pine",
+    "wrong": "cd $R/timber\ncat > main.tf <<'HCL'\nresource \"local_file\" \"hull\" {\n  filename = \"${path.module}/hull.txt\"\n  content  = \"hull\"\n\n  lifecycle {\n    replace_triggered_by = [var.recipe]\n  }\n}\nHCL\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/timber\nterraform apply -replace=local_file.hull -auto-approve",
+    "wrong": "cd $R/timber\nterraform taint local_file.hull"
+   }
+  ]
+ },
+ {
+  "folder": "order-inspector",
+  "steps": [
+   {
+    "solve": "cd $R/inspect\ncat > variables.tf <<'HCL'\nvariable \"env\" {\n  type    = string\n  default = \"dev\"\n\n  validation {\n    condition     = contains([\"dev\", \"prod\"], var.env)\n    error_message = \"env must be dev or prod.\"\n  }\n}\n\nvariable \"masts\" {\n  type    = number\n  default = 2\n\n  validation {\n    condition     = var.masts >= 1 && var.masts <= 5\n    error_message = \"A ship has 1 to 5 masts.\"\n  }\n}\n\nvariable \"crew\" {\n  type    = list(string)\n  default = [\"Ada\", \"Bo\"]\n}\nHCL\nterraform plan -var env=staging || true",
+    "wrong": "cd $R/inspect\ncat > variables.tf <<'HCL'\nvariable \"env\" {\n  type    = string\n  default = \"dev\"\n\n  validation {\n    condition     = var.env != \"staging\"\n    error_message = \"No staging.\"\n  }\n}\n\nvariable \"masts\" {\n  type    = number\n  default = 2\n\n  validation {\n    condition     = var.masts <= 5\n    error_message = \"Too many masts.\"\n  }\n}\n\nvariable \"crew\" {\n  type    = list(string)\n  default = [\"Ada\", \"Bo\"]\n}\nHCL"
+   },
+   {
+    "solve": "cd $R/inspect\nsed -i 's|  content  = \"${var.env}: ${var.masts} masts, ${length(var.crew)} crew\"|&\\n\\n  lifecycle {\\n    precondition {\\n      condition     = length(var.crew) >= var.masts\\n      error_message = \"Each mast needs at least one crew member.\"\\n    }\\n  }|' main.tf\nterraform plan -var masts=3 || true",
+    "wrong": "cd $R/inspect\n$PY - <<'PY'\nt=open('variables.tf').read()\nt=t.replace('error_message = \"A ship has 1 to 5 masts.\"','error_message = \"A ship has 1 to 5 masts.\"\\n  }\\n\\n  validation {\\n    condition     = var.masts <= length(var.crew)\\n    error_message = \"Not enough crew.\"',1)\nopen('variables.tf','w').write(t)\nPY"
+   }
+  ]
+ },
+ {
+  "folder": "lookout",
+  "steps": [
+   {
+    "solve": "cd $R/lookout\ncat >> main.tf <<'HCL'\n\ncheck \"calm_seas\" {\n  assert {\n    condition     = !strcontains(local_file.log.content, \"storm\")\n    error_message = \"The log mentions a storm.\"\n  }\n}\nHCL\nterraform plan -var 'weather=storm ahead'",
+    "wrong": "cd $R/lookout\nsed -i 's|  content  = var.weather|&\\n\\n  lifecycle {\\n    precondition {\\n      condition     = !strcontains(var.weather, \"storm\")\\n      error_message = \"Storm.\"\\n    }\\n  }|' main.tf"
+   },
+   {
+    "solve": "cd $R/lookout\nsed -i 's/command = \"exit 1\"/command = \"echo launched\"/' launch.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/lookout\nterraform untaint terraform_data.launch"
+   }
+  ]
+ },
+ {
+  "folder": "dock-rules",
+  "steps": [
+   {
+    "solve": "cd $R/dock\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('depends_on = [local_file.orders.content]','depends_on = [local_file.orders]')\nt=t.replace('replace_triggered_by = [var.recipe]','replace_triggered_by = [terraform_data.recipe]')\nt=t.replace('create_before_destroy = var.safe','create_before_destroy = true')\nt=t.replace('content  = \"every ship we ever built\"','content  = \"every ship we ever built\"\\n\\n  lifecycle {\\n    prevent_destroy = true\\n  }')\nopen('main.tf','w').write(t)\nv=open('variables.tf').read().replace('!contains([\"dev\", \"prod\"], var.env)','contains([\"dev\", \"prod\"], var.env)')\nopen('variables.tf','w').write(v)\nPY\nterraform init\nterraform validate\nterraform apply -auto-approve",
+    "wrong": "cd $R/dock\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('depends_on = [local_file.orders.content]','depends_on = [local_file.orders]')\nt=t.replace('replace_triggered_by = [var.recipe]','replace_triggered_by = [terraform_data.recipe]')\nt=t.replace('create_before_destroy = var.safe','create_before_destroy = true')\nopen('main.tf','w').write(t)\nv=open('variables.tf').read().replace('!contains([\"dev\", \"prod\"], var.env)','contains([\"dev\", \"prod\"], var.env)')\nopen('variables.tf','w').write(v)\nPY\nterraform init\nterraform apply -auto-approve"
+   }
+  ]
  }
 ]

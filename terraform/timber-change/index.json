@@ -1,0 +1,30 @@
+{
+  "title": "🟡 Terraform 25 · Timber change",
+  "description": "Rebuild the hull when the recipe changes, then rebuild it once with -replace.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "New timber, new hull",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "Rebuild it once",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh",
+        "background": "step2/background.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

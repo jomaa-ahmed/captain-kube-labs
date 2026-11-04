@@ -9,7 +9,7 @@ COURSES = [
     ("core", "Captain Kube · Module 1 · Core Concepts"),
     ("scheduling", "Captain Kube · Module 2 · Scheduling"),
     ("helm", "Captain Kube · Module 10 · Helm"),
-    ("terraform", "The Shipwright · Terraform · Modules 0-6"),
+    ("terraform", "The Shipwright · Terraform · Modules 0-7"),
 ]
 
 FOREGROUND = """\
