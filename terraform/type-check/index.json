@@ -1,0 +1,30 @@
+{
+  "title": "🔧 Terraform 15 · Type check",
+  "description": "A set that can't be indexed, and an object order that leaves out an attribute.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "The first wood",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "An optional flag",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh",
+        "background": "step2/background.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

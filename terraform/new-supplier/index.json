@@ -1,0 +1,30 @@
+{
+  "title": "🔧 Terraform 8 · New supplier",
+  "description": "A new provider in the blueprint: re-run init, and give a non-HashiCorp provider its full source address.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "A new supplier",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "A supplier from another company",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh",
+        "background": "step2/background.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

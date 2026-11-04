@@ -22,13 +22,43 @@
       "path": "remove-one"
     },
     {
+      "path": "new-supplier"
+    },
+    {
       "path": "versions-lock"
+    },
+    {
+      "path": "no-secrets"
     },
     {
       "path": "two-harbors"
     },
     {
+      "path": "rules-on-the-door"
+    },
+    {
       "path": "shipyard-in-trouble"
+    },
+    {
+      "path": "harbor-register"
+    },
+    {
+      "path": "fill-the-blanks"
+    },
+    {
+      "path": "type-check"
+    },
+    {
+      "path": "who-wins"
+    },
+    {
+      "path": "delivery-receipt"
+    },
+    {
+      "path": "margin-note"
+    },
+    {
+      "path": "order-form"
     }
   ]
 }

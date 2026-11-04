@@ -1,0 +1,30 @@
+{
+  "title": "🟡 Terraform 18 · Margin note",
+  "description": "Name a repeated expression once with locals, without changing what's built.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Write it once",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "Sail to prod",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh",
+        "background": "step2/background.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

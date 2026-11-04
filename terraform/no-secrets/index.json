@@ -1,0 +1,24 @@
+{
+  "title": "🔧 Terraform 10 · No secrets in the blueprint",
+  "description": "A token is hard-coded in a provider block. Move it out of the code.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Take the token out",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

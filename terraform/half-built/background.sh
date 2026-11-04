@@ -13,6 +13,10 @@ fi
     cat > main.tf <<'HCL'
 resource "random_pet" "ship" {}
 
+resource "random_password" "dock_code" {
+  length = 16
+}
+
 resource "local_file" "logbook" {
   filename = "${path.module}/logs/today.txt"
   content  = "Ship ${random_pet.ship.id} launched"

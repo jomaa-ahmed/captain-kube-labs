@@ -62,6 +62,10 @@
    {
     "solve": "cd $R/halfbuilt\nterraform apply -auto-approve || true\nsed -i 's#logs/today.txt#logbook/today.txt#' main.tf\nterraform apply -auto-approve",
     "wrong": "cd $R/halfbuilt\nsed -i 's#logs/today.txt#logbook/today.txt#' main.tf\nterraform destroy -auto-approve\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/halfbuilt\nterraform apply -replace=random_password.dock_code -auto-approve",
+    "wrong": "cd $R/halfbuilt\nsed -i 's/length = 16/length = 17/' main.tf\nterraform apply -auto-approve"
    }
   ]
  },
@@ -71,6 +75,10 @@
    {
     "solve": "cd $R/dismantle\n$PY - <<'PY'\nimport re\np='main.tf'; t=open(p).read()\nt=re.sub(r'resource \"local_file\" \"old_boat\" \\{.*?\\n\\}\\n?', '', t, flags=re.S)\nopen(p,'w').write(t)\nPY\nterraform apply -auto-approve",
     "wrong": "cd $R/dismantle\nterraform destroy -auto-approve"
+   },
+   {
+    "solve": "cd $R/dismantle\nterraform plan -destroy -out=teardown.tfplan\nmkdir -p $R/answers\necho 2 > $R/answers/destroy_count.txt",
+    "wrong": "cd $R/dismantle\nterraform destroy -auto-approve\nmkdir -p $R/answers\necho 2 > $R/answers/destroy_count.txt"
    }
   ]
  },
@@ -98,6 +106,132 @@
    {
     "solve": "cd $R/boss\nterraform init -upgrade\nsed -i 's/lifecycle = {/lifecycle {/' main.tf\nterraform fmt\nterraform validate\nterraform apply -auto-approve",
     "wrong": "cd $R/boss\nrm -f .terraform.lock.hcl\nsed -i 's/lifecycle = {/lifecycle {/' main.tf\nterraform fmt\nterraform init\nterraform destroy -auto-approve\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "new-supplier",
+  "steps": [
+   {
+    "solve": "cd $R/supplier\nterraform plan || true\nterraform init\nterraform apply -auto-approve",
+    "wrong": "cd $R/supplier\nrm -rf .terraform .terraform.lock.hcl\nterraform init\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/supplier\nterraform init || true\ncat > versions.tf <<'HCL'\nterraform {\n  required_providers {\n    docker = {\n      source = \"kreuzwerker/docker\"\n    }\n  }\n}\nHCL\nterraform init\nterraform validate",
+    "wrong": "cd $R/supplier\ncat > versions.tf <<'HCL'\nterraform {\n  required_providers {\n    docker = {\n      source = \"hashicorp/docker\"\n    }\n  }\n}\nHCL\nterraform init || true"
+   }
+  ]
+ },
+ {
+  "folder": "no-secrets",
+  "steps": [
+   {
+    "solve": "cd $R/secrets\nsed -i '/token *=/d' provider.tf\nterraform validate\nmkdir -p $R/answers\necho GITHUB_TOKEN > $R/answers/token_env.txt",
+    "wrong": "cd $R/secrets\nsed -i 's/token *= *\"ghp_[A-Za-z0-9]*\"/token = var.github_token/' provider.tf\ncat > variables.tf <<'HCL'\nvariable \"github_token\" {\n  default = \"ghp_SHIPYARD0000000000000000000000000000\"\n}\nHCL\nmkdir -p $R/answers\necho GITHUB_TOKEN > $R/answers/token_env.txt"
+   }
+  ]
+ },
+ {
+  "folder": "rules-on-the-door",
+  "steps": [
+   {
+    "solve": "cd $R/rules\nterraform init || true\nsed -i 's/required_version = \">= 1.13\"/required_version = \"~> 1.12\"/' terraform.tf",
+    "wrong": "cd $R/rules\nsed -i '/required_version/d' terraform.tf"
+   },
+   {
+    "solve": "cd $R/rules\nsed -i 's#path = var.state_path#path = \"ledger/shipyard.tfstate\"#' terraform.tf\nterraform init\nterraform apply -auto-approve",
+    "wrong": "cd $R/rules\nsed -i '/backend \"local\"/,/}/d' terraform.tf\nterraform init\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "harbor-register",
+  "steps": [
+   {
+    "solve": "cd $R/register\n$PY - <<'PY'\nimport re\np='main.tf'; t=open(p).read()\nt=re.sub(r'resource \"local_file\" \"register\" \\{.*?\\n\\}', 'data \"local_file\" \"register\" {\\n  filename = \"${path.module}/ships.txt\"\\n}', t, flags=re.S)\nt=t.replace('local_file.register.content', 'data.local_file.register.content')\nopen(p,'w').write(t)\nPY\nterraform apply -auto-approve",
+    "wrong": "cd $R/register\nsed -i 's#content  = \"\"#content  = file(\"${path.module}/ships.txt\")#' main.tf\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/register\ncat >> main.tf <<'HCL'\n\nresource \"random_pet\" \"captain\" {}\n\nresource \"local_file\" \"captain\" {\n  filename = \"${path.module}/captain.txt\"\n  content  = \"Captain: ${random_pet.captain.id}\"\n}\nHCL\nterraform init\nterraform plan\nmkdir -p $R/answers\necho id > $R/answers/known.txt\nterraform apply -auto-approve",
+    "wrong": "cd $R/register\ncat >> main.tf <<'HCL'\n\nresource \"random_pet\" \"captain\" {}\n\nresource \"local_file\" \"captain\" {\n  filename = \"${path.module}/captain.txt\"\n  content  = \"Captain: Kestrel\"\n}\nHCL\nterraform init\nmkdir -p $R/answers\necho length > $R/answers/known.txt\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "fill-the-blanks",
+  "steps": [
+   {
+    "solve": "cd $R/blanks\ncat > variables.tf <<'HCL'\nvariable \"ship_name\" {\n  type        = string\n  description = \"Name of the ship on the order\"\n}\nHCL\nsed -i 's/Kestrel/${var.ship_name}/' main.tf\necho 'ship_name = \"Osprey\"' > terraform.tfvars\nterraform apply -auto-approve",
+    "wrong": "cd $R/blanks\nsed -i 's/Kestrel/Osprey/' main.tf\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/blanks\nterraform plan || true\nsed -i 's/masts = \"three\"/masts = 3/' terraform.tfvars\nterraform apply -auto-approve",
+    "wrong": "cd $R/blanks\nsed -i 's/type        = number/type        = string/' variables.tf\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "type-check",
+  "steps": [
+   {
+    "solve": "cd $R/types\nterraform plan || true\nsed -i 's/type    = set(string)/type    = list(string)/' variables.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/types\nsed -i 's/content  = var.woods\\[0\\]/content  = \"oak\"/' main.tf\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/types\nterraform plan || true\nsed -i 's/flag = string/flag = optional(string, \"violet\")/' variables.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/types\nsed -i 's/masts = 2/masts = 2\\n  flag  = \"violet\"/' terraform.tfvars\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "who-wins",
+  "steps": [
+   {
+    "solve": "cd $R/wins\necho var.flag | terraform console\nmkdir -p $R/answers\necho z-auto > $R/answers/winner.txt",
+    "wrong": "mkdir -p $R/answers\necho tfvars > $R/answers/winner.txt"
+   },
+   {
+    "solve": "cd $R/wins\nterraform apply -var-file=prod.tfvars -auto-approve",
+    "wrong": "cd $R/wins\ncp prod.tfvars zz.auto.tfvars\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "mkdir -p $R/answers\necho prod > $R/answers/order.txt",
+    "wrong": "mkdir -p $R/answers\necho cli > $R/answers/order.txt"
+   }
+  ]
+ },
+ {
+  "folder": "delivery-receipt",
+  "steps": [
+   {
+    "solve": "cd $R/receipt\ncat > outputs.tf <<'HCL'\noutput \"dock_code\" {\n  value     = random_password.dock_code.result\n  sensitive = true\n}\n\noutput \"ship_name\" {\n  value = random_pet.ship.id\n}\nHCL\nterraform apply -auto-approve\nterraform output",
+    "wrong": "cd $R/receipt\ncat > outputs.tf <<'HCL'\noutput \"ship_name\" {\n  value = random_pet.ship.id\n}\nHCL\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/receipt\nterraform output -raw ship_name > name.txt",
+    "wrong": "cd $R/receipt\nterraform output ship_name > name.txt"
+   }
+  ]
+ },
+ {
+  "folder": "margin-note",
+  "steps": [
+   {
+    "solve": "cd $R/margin\n$PY - <<'PY'\np='main.tf'; t=open(p).read()\nt=t.replace('shipyard-${var.env}', '${local.prefix}')\nt='locals {\\n  prefix = \"shipyard-${var.env}\"\\n}\\n\\n'+t\nopen(p,'w').write(t)\nPY\nterraform plan",
+    "wrong": "cd $R/margin\n$PY - <<'PY'\np='main.tf'; t=open(p).read()\nt=t.replace('shipyard-${var.env}', '${local.prefix}')\nt='locals {\\n  prefix = \"shipyard_${var.env}\"\\n}\\n\\n'+t\nopen(p,'w').write(t)\nPY\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/margin\nterraform apply -var 'env=prod' -auto-approve",
+    "wrong": "cd $R/margin\nsed -i 's/default = \"dev\"/default = \"prod\"/' variables.tf\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "order-form",
+  "steps": [
+   {
+    "solve": "cd $R/order\n$PY - <<'PY'\nimport re\nt=open('main.tf').read()\nt=re.sub(r'resource \"local_file\" \"crew\" \\{.*?\\n\\}', 'data \"local_file\" \"crew\" {\\n  filename = \"${path.module}/crew.txt\"\\n}', t, flags=re.S)\nt=t.replace('local_file.crew.content','data.local_file.crew.content').replace('locals.label','local.label')\nopen('main.tf','w').write(t)\nv=open('variables.tf').read().replace('flag = string','flag = optional(string, \"violet\")')\nopen('variables.tf','w').write(v)\no=open('terraform.tfvars').read().replace('masts = \"two\"','masts = 2')\nopen('terraform.tfvars','w').write(o)\nout=open('outputs.tf').read().replace('value = random_password.dock_code.result','value     = random_password.dock_code.result\\n  sensitive = true')\nopen('outputs.tf','w').write(out)\nPY\nterraform fmt\nterraform validate\nterraform apply -auto-approve",
+    "wrong": "cd $R/order\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('content  = \"\"','content  = file(\"${path.module}/crew.txt\")').replace('locals.label','local.label')\nopen('main.tf','w').write(t)\nv=open('variables.tf').read().replace('flag = string','flag = optional(string, \"violet\")')\nopen('variables.tf','w').write(v)\no=open('terraform.tfvars').read().replace('masts = \"two\"','masts = 2')\nopen('terraform.tfvars','w').write(o)\nout=open('outputs.tf').read().replace('value = random_password.dock_code.result','value     = random_password.dock_code.result\\n  sensitive = true')\nopen('outputs.tf','w').write(out)\nPY\nterraform apply -auto-approve"
    }
   ]
  }

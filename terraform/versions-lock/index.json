@@ -1,5 +1,5 @@
 {
-  "title": "🔧 Terraform 8 · Versions and the lock file",
+  "title": "🔧 Terraform 9 · Versions and the lock file",
   "description": "The constraint changed and init refuses. Move to the new version the right way.",
   "details": {
     "intro": {
