@@ -92,6 +92,21 @@
     },
     {
       "path": "dock-rules"
+    },
+    {
+      "path": "ledger-reading"
+    },
+    {
+      "path": "harbor-vault"
+    },
+    {
+      "path": "pink-hull"
+    },
+    {
+      "path": "slipways"
+    },
+    {
+      "path": "the-vault"
     }
   ]
 }

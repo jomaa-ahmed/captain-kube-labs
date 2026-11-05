@@ -1,0 +1,31 @@
+{
+  "title": "🔧 Terraform 30 · The pink hull",
+  "description": "Fix drift the Terraform way, then accept a deliberate change with -refresh-only.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Someone repainted it",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh",
+        "background": "step1/background.sh"
+      },
+      {
+        "title": "Scrapped on purpose",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh",
+        "background": "step2/background.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

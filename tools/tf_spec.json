@@ -373,5 +373,66 @@
     "wrong": "cd $R/dock\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('depends_on = [local_file.orders.content]','depends_on = [local_file.orders]')\nt=t.replace('replace_triggered_by = [var.recipe]','replace_triggered_by = [terraform_data.recipe]')\nt=t.replace('create_before_destroy = var.safe','create_before_destroy = true')\nopen('main.tf','w').write(t)\nv=open('variables.tf').read().replace('!contains([\"dev\", \"prod\"], var.env)','contains([\"dev\", \"prod\"], var.env)')\nopen('variables.tf','w').write(v)\nPY\nterraform init\nterraform apply -auto-approve"
    }
   ]
+ },
+ {
+  "folder": "ledger-reading",
+  "steps": [
+   {
+    "solve": "cd $R/ledger\nterraform state show -no-color random_pet.ship\nterraform show -json | $PY -c \"import json,sys; print([r['values']['id'] for r in json.load(sys.stdin)['values']['root_module']['resources'] if r['address']=='random_pet.ship'][0])\" > answer.txt",
+    "wrong": "cd $R/ledger\necho guided-honeybee > answer.txt"
+   },
+   {
+    "solve": "cd $R/ledger\nprintf '*.tfstate*\\n.terraform/\\n' > .gitignore\ngit status --short",
+    "wrong": "cd $R/ledger\necho 'terraform.tfstate' > .gitignore"
+   }
+  ]
+ },
+ {
+  "folder": "harbor-vault",
+  "steps": [
+   {
+    "solve": "cd $R/harbor\ncat > backend.tf <<'HCL'\nterraform {\n  backend \"local\" {\n    path = \"vault/terraform.tfstate\"\n  }\n}\nHCL\nterraform init -migrate-state -force-copy -input=false\nrm -f terraform.tfstate terraform.tfstate.backup\nterraform state list",
+    "wrong": "cd $R/harbor\ncat > backend.tf <<'HCL'\nterraform {\n  backend \"local\" {\n    path = \"vault/terraform.tfstate\"\n  }\n}\nHCL\nterraform init -reconfigure -input=false\nrm -f terraform.tfstate terraform.tfstate.backup\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/harbor\nprintf 'terraform {\\n  backend \"local\" {}\\n}\\n' > backend.tf\necho 'path = \"vault/terraform.tfstate\"' > vault.tfbackend\nterraform init -reconfigure -backend-config=vault.tfbackend -input=false\nterraform plan",
+    "wrong": "cd $R/harbor\nprintf 'terraform {\\n  backend \"local\" {}\\n}\\n' > backend.tf\nterraform init -reconfigure -input=false"
+   }
+  ]
+ },
+ {
+  "folder": "pink-hull",
+  "steps": [
+   {
+    "solve": "cd $R/pink\nterraform plan\nterraform apply -auto-approve",
+    "wrong": "cd $R/pink\nterraform apply -refresh-only -auto-approve"
+   },
+   {
+    "solve": "cd $R/pink\nterraform plan -refresh-only\nterraform apply -refresh-only -auto-approve\n$PY - <<'PY'\nimport re\nt=open('main.tf').read()\nt=re.sub(r'\\nresource \"local_file\" \"mast\" \\{.*?\\n\\}\\n?', '\\n', t, flags=re.S)\nopen('main.tf','w').write(t)\nPY\nterraform plan",
+    "wrong": "cd $R/pink\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "slipways",
+  "steps": [
+   {
+    "solve": "cd $R/slipways\ncat > main.tf <<'HCL'\nresource \"local_file\" \"dock\" {\n  filename = \"${path.module}/dock-${terraform.workspace}.txt\"\n  content  = \"masts: ${terraform.workspace == \"prod\" ? 3 : 1}\"\n}\nHCL\nterraform workspace new dev\nterraform apply -auto-approve\nterraform workspace new prod\nterraform apply -auto-approve",
+    "wrong": "cd $R/slipways\ncat > main.tf <<'HCL'\nresource \"local_file\" \"dock\" {\n  filename = \"${path.module}/dock-${terraform.workspace}.txt\"\n  content  = \"masts: ${terraform.workspace == \"prod\" ? 3 : 1}\"\n}\nHCL\nterraform workspace new dev\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/slipways\nterraform workspace select test\nterraform destroy -auto-approve\nterraform workspace select default\nterraform workspace delete test",
+    "wrong": "cd $R/slipways\nterraform workspace delete -force test"
+   }
+  ]
+ },
+ {
+  "folder": "the-vault",
+  "steps": [
+   {
+    "solve": "cd $R/yard8\nsed -i 's|path = var.vault_path|path = \"vault/terraform.tfstate\"|' backend.tf\nterraform init -migrate-state -force-copy -input=false\nrm -f terraform.tfstate terraform.tfstate.backup\nterraform apply -auto-approve\nprintf '*.tfstate*\\n.terraform/\\n' > .gitignore",
+    "wrong": "cd $R/yard8\nsed -i 's|path = var.vault_path|path = \"vault/terraform.tfstate\"|' backend.tf\nterraform init -reconfigure -input=false\nrm -f terraform.tfstate terraform.tfstate.backup\nterraform apply -auto-approve\nprintf '*.tfstate*\\n.terraform/\\n' > .gitignore"
+   }
+  ]
  }
 ]

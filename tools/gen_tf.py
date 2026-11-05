@@ -26,8 +26,10 @@ ORDER = ["first-apply", "fix-the-blueprint", "references", "layout-and-fmt", "re
          "two-ships", "bunk-shift", "fleet-map", "crate",
          "fleet-yard",
          "hidden-orders", "shipyard-rules", "timber-change", "order-inspector", "lookout",
-         "dock-rules"]
-BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard", "dock-rules"}
+         "dock-rules",
+         "ledger-reading", "harbor-vault", "pink-hull", "slipways",
+         "the-vault"]
+BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard", "dock-rules", "the-vault"}
 
 PRE = """\
 R=${LABROOT:-/root}; PY=${PY:-python3}
@@ -3161,6 +3163,425 @@ terraform apply -auto-approve""",
     """,
 )
 
+# 8.1 + 8.2 · reading the ledger -------------------------------------------------------------------------------------
+tf_lab(
+    "ledger-reading",
+    "🟢 Terraform # · Reading the ledger",
+    "Read a real object's ID from the state, then keep every state file out of Git.",
+    f"""
+    # Reading the ledger
+
+    In `/root/ledger`, Terraform already built a hull and a ship with a random name. The state knows which
+    real ship is ours. And the folder is a Git repository.
+
+    Lessons: {L("8.1", "Why state exists")} · {L("8.2", "The local backend")}
+    """,
+    [
+        {"title": "Which ship is ours?",
+         "text": """
+         Find the real name (the `id`) of `random_pet.ship` and write it, alone, into `/root/ledger/answer.txt`.
+
+         ⛔ Read it the Terraform way, not by opening `terraform.tfstate` in an editor.
+         """,
+         "hint": "`terraform state show random_pet.ship` prints its attributes. Copy the `id` value (without quotes): `echo some-name > answer.txt`.",
+         "solve": """cd $R/ledger
+terraform state show -no-color random_pet.ship
+terraform show -json | $PY -c "import json,sys; print([r['values']['id'] for r in json.load(sys.stdin)['values']['root_module']['resources'] if r['address']=='random_pet.ship'][0])" > answer.txt""",
+         "wrong": "cd $R/ledger\necho guided-honeybee > answer.txt",
+         "verify": """
+         cd $R/ledger
+         [ "$(tr -d ' \\n\\r"' < answer.txt 2>/dev/null)" = "$(attr . random_pet.ship id)" ] || exit 1
+         """},
+        {"title": "Never in Git",
+         "text": """
+         The state holds every attribute in plain text, and a second apply also writes `terraform.tfstate.backup`.
+         Create a `.gitignore` so that Git ignores **every** state file and the `.terraform/` folder, but still tracks `main.tf`.
+
+         Check with `git status`.
+         """,
+         "hint": "One pattern covers the state and its backup: `*.tfstate*`. Add `.terraform/` on a second line.",
+         "solve": "cd $R/ledger\nprintf '*.tfstate*\\n.terraform/\\n' > .gitignore\ngit status --short",
+         "wrong": "cd $R/ledger\necho 'terraform.tfstate' > .gitignore",
+         "verify": """
+         cd $R/ledger
+         git check-ignore -q terraform.tfstate || exit 1
+         git check-ignore -q terraform.tfstate.backup || exit 1
+         git check-ignore -q .terraform/x || exit 1
+         ! git check-ignore -q main.tf || exit 1
+         """},
+    ],
+    done("""
+    The state maps every address to a real object: `terraform state show` reads it safely. It holds secrets in
+    plain text, and the local backend writes a `.backup` too, so `*.tfstate*` stays out of Git.
+    """, "Terraform · Into the vault"),
+    setup="""
+    mkdir -p $R/ledger && cd $R/ledger
+    """ + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "random_pet" "ship" {}
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    git init -q . 2>/dev/null || true
+    """,
+)
+
+# 8.4 + 8.5 · migrating state ------------------------------------------------------------------------------------------
+tf_lab(
+    "harbor-vault",
+    "🟡 Terraform # · Into the vault",
+    "Migrate local state into a new backend without rebuilding anything, then move the path into a backend config file.",
+    f"""
+    # Into the vault
+
+    In `/root/harbor`, the state is a plain `terraform.tfstate` next to the code. It's time to move the ledger
+    into the vault: `vault/terraform.tfstate`. (On a real team that's an S3 bucket; the steps are the same.)
+
+    Lessons: {L("8.4", "Remote state")} · {L("8.5", "Migrating state")}
+    """,
+    [
+        {"title": "Move the ledger",
+         "text": """
+         Add this backend to the configuration and **migrate** the existing state into it:
+
+         ```
+         terraform {
+           backend "local" {
+             path = "vault/terraform.tfstate"
+           }
+         }
+         ```
+
+         Nothing may be rebuilt: `random_pet.ship` must keep its name. When the vault holds the state, delete the
+         old `terraform.tfstate` (and its backup) from the folder. The plan must end with **No changes**.
+         """,
+         "hint": "`terraform init -migrate-state` copies the state (answer `yes`, or add `-force-copy`). `-reconfigure` would start the new backend empty.",
+         "solve": """cd $R/harbor
+cat > backend.tf <<'HCL'
+terraform {
+  backend "local" {
+    path = "vault/terraform.tfstate"
+  }
+}
+HCL
+terraform init -migrate-state -force-copy -input=false
+rm -f terraform.tfstate terraform.tfstate.backup
+terraform state list""",
+         "wrong": """cd $R/harbor
+cat > backend.tf <<'HCL'
+terraform {
+  backend "local" {
+    path = "vault/terraform.tfstate"
+  }
+}
+HCL
+terraform init -reconfigure -input=false
+rm -f terraform.tfstate terraform.tfstate.backup
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/harbor
+         [ -f vault/terraform.tfstate ] && [ ! -f terraform.tfstate ] || exit 1
+         [ "$(attr . random_pet.ship id)" = "$(cat /tmp/harbor_pet)" ] || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "The path out of the code",
+         "text": """
+         Dev and prod will use different vaults, and a backend block can't use variables. Use **partial configuration**:
+
+         - the `backend "local"` block stays, but **without** `path`
+         - the path goes in a file `vault.tfbackend`: `path = "vault/terraform.tfstate"`
+         - run `terraform init` with that file. Same state, nothing rebuilt, plan: **No changes**
+         """,
+         "hint": "`backend \"local\" {}` in backend.tf, then `terraform init -reconfigure -backend-config=vault.tfbackend`. The state stays where it is because the path is the same.",
+         "solve": """cd $R/harbor
+printf 'terraform {\\n  backend "local" {}\\n}\\n' > backend.tf
+echo 'path = "vault/terraform.tfstate"' > vault.tfbackend
+terraform init -reconfigure -backend-config=vault.tfbackend -input=false
+terraform plan""",
+         "wrong": """cd $R/harbor
+printf 'terraform {\\n  backend "local" {}\\n}\\n' > backend.tf
+terraform init -reconfigure -input=false""",
+         "verify": """
+         cd $R/harbor
+         ! grep -q 'path' backend.tf || exit 1
+         grep -q 'vault/terraform.tfstate' vault.tfbackend || exit 1
+         [ "$(attr . random_pet.ship id)" = "$(cat /tmp/harbor_pet)" ] || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    Any backend change needs `terraform init`. `-migrate-state` copies the state, `-reconfigure` starts fresh, and the
+    old local file stays behind until you delete it. Backend blocks take no variables: values go in with `-backend-config`.
+    """, "Terraform · The pink hull"),
+    setup="""
+    mkdir -p $R/harbor && cd $R/harbor
+    """ + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "random_pet" "ship" {}
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    terraform show -json | $PY -c "import json,sys; print([r['values']['id'] for r in json.load(sys.stdin)['values']['root_module']['resources'] if r['address']=='random_pet.ship'][0])" > /tmp/harbor_pet
+    """,
+)
+
+# 8.6 + 8.7 · drift and refresh-only ------------------------------------------------------------------------------------
+tf_lab(
+    "pink-hull",
+    "🔧 Terraform # · The pink hull",
+    "Fix drift the Terraform way, then accept a deliberate change with -refresh-only.",
+    f"""
+    # The pink hull
+
+    In `/root/pink`, Terraform built a hull and a mast. Then people started changing things by hand.
+
+    Lessons: {L("8.6", "Drift")} · {L("8.7", "Refresh-only mode")}
+    """,
+    [
+        {"title": "Someone repainted it",
+         "background": """
+         cd $R/pink
+         echo "painted pink" > hull.txt
+         """,
+         "text": """
+         Someone wrote `painted pink` into `hull.txt` by hand. The blueprint is right: put the hull back
+         **the Terraform way**. Read the plan first: what does Terraform want to do, and why?
+         """,
+         "hint": "`terraform plan` shows the drift (the local provider treats the changed file as gone), `terraform apply` rebuilds it from the code. Not `-refresh-only`: that would accept the pink hull.",
+         "solve": "cd $R/pink\nterraform plan\nterraform apply -auto-approve",
+         "wrong": "cd $R/pink\nterraform apply -refresh-only -auto-approve",
+         "verify": """
+         cd $R/pink
+         [ "$(cat hull.txt)" = "oak, 3 masts" ] || exit 1
+         st . | grep -qx local_file.hull || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Scrapped on purpose",
+         "background": """
+         cd $R/pink
+         rm -f mast.txt
+         """,
+         "text": """
+         This time the change was **right**: the captain scrapped the mast on purpose, and `mast.txt` is gone.
+
+         Record that in the state **without rebuilding the mast**, then update the code so it agrees.
+         The plan must end with **No changes**, and `mast.txt` must not come back.
+         """,
+         "hint": "`terraform plan -refresh-only` shows the change, `terraform apply -refresh-only` records it in the state only. Then delete the `local_file.mast` block from main.tf.",
+         "solve": """cd $R/pink
+terraform plan -refresh-only
+terraform apply -refresh-only -auto-approve
+$PY - <<'PY'
+import re
+t=open('main.tf').read()
+t=re.sub(r'\\nresource "local_file" "mast" \\{.*?\\n\\}\\n?', '\\n', t, flags=re.S)
+open('main.tf','w').write(t)
+PY
+terraform plan""",
+         "wrong": "cd $R/pink\nterraform apply -auto-approve",
+         "verify": """
+         cd $R/pink
+         [ ! -f mast.txt ] || exit 1
+         ! st . | grep -q 'local_file.mast' || exit 1
+         ! grep -q '"mast"' main.tf || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    Every plan refreshes first and shows drift; a normal apply puts the code back. When the real world is right,
+    `-refresh-only` updates the state without touching anything real, and then the code has to follow.
+    """, "Terraform · Parallel slipways"),
+    setup="""
+    mkdir -p $R/pink && cd $R/pink
+    """ + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "local_file" "mast" {
+      filename = "${path.module}/mast.txt"
+      content  = "pine, 20 m"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# 8.9 · workspaces -------------------------------------------------------------------------------------------------------
+tf_lab(
+    "slipways",
+    "🟡 Terraform # · Parallel slipways",
+    "One configuration, a state per workspace, then remove a workspace and everything in it.",
+    f"""
+    # Parallel slipways
+
+    In `/root/slipways`, one blueprint builds a dock file. The shipyard wants a **dev** and a **prod** slipway,
+    each with its own ledger.
+
+    Lesson: {L("8.9", "CLI workspaces")}
+    """,
+    [
+        {"title": "Two slipways",
+         "text": """
+         Change `main.tf` so the file is called `dock-<workspace>.txt` and says `masts: 3` in **prod**, `masts: 1` everywhere else.
+
+         Then create the workspaces `dev` and `prod` and apply in **each** of them.
+         """,
+         "hint": "`terraform.workspace` holds the current name: `filename = \"${path.module}/dock-${terraform.workspace}.txt\"`, `content = \"masts: ${terraform.workspace == \"prod\" ? 3 : 1}\"`. Then `terraform workspace new dev`, apply, `terraform workspace new prod`, apply.",
+         "solve": """cd $R/slipways
+cat > main.tf <<'HCL'
+resource "local_file" "dock" {
+  filename = "${path.module}/dock-${terraform.workspace}.txt"
+  content  = "masts: ${terraform.workspace == "prod" ? 3 : 1}"
+}
+HCL
+terraform workspace new dev
+terraform apply -auto-approve
+terraform workspace new prod
+terraform apply -auto-approve""",
+         "wrong": """cd $R/slipways
+cat > main.tf <<'HCL'
+resource "local_file" "dock" {
+  filename = "${path.module}/dock-${terraform.workspace}.txt"
+  content  = "masts: ${terraform.workspace == "prod" ? 3 : 1}"
+}
+HCL
+terraform workspace new dev
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/slipways
+         [ "$(cat dock-dev.txt 2>/dev/null)" = "masts: 1" ] || exit 1
+         [ "$(cat dock-prod.txt 2>/dev/null)" = "masts: 3" ] || exit 1
+         grep -q '"dock"' terraform.tfstate.d/dev/terraform.tfstate 2>/dev/null || exit 1
+         grep -q '"dock"' terraform.tfstate.d/prod/terraform.tfstate 2>/dev/null || exit 1
+         """},
+        {"title": "Close a slipway",
+         "background": """
+         cd $R/slipways
+         terraform workspace new test >/dev/null 2>&1 || terraform workspace select test >/dev/null 2>&1
+         terraform apply -auto-approve -input=false >/dev/null 2>&1
+         terraform workspace select default >/dev/null 2>&1
+         """,
+         "text": """
+         Someone opened a `test` workspace and built `dock-test.txt` in it. Close that slipway **completely**:
+         the workspace must disappear, and so must everything it built.
+         """,
+         "hint": "`terraform workspace delete test` refuses while the workspace still tracks resources. Select it, `terraform destroy`, go back to another workspace, then delete it.",
+         "solve": """cd $R/slipways
+terraform workspace select test
+terraform destroy -auto-approve
+terraform workspace select default
+terraform workspace delete test""",
+         "wrong": "cd $R/slipways\nterraform workspace delete -force test",
+         "verify": """
+         cd $R/slipways
+         ! terraform workspace list 2>/dev/null | grep -qw test || exit 1
+         [ ! -f dock-test.txt ] || exit 1
+         [ -f dock-dev.txt ] && [ -f dock-prod.txt ] || exit 1
+         """},
+    ],
+    done("""
+    Each workspace keeps its own state (`terraform.tfstate.d/<name>/`), and `terraform.workspace` names it in the code.
+    A workspace with resources can't be deleted: destroy first. And for separate credentials, use separate configurations.
+    """, "BOSS · The vault"),
+    setup="""
+    mkdir -p $R/slipways && cd $R/slipways
+    """ + hcl("main.tf", '''
+    resource "local_file" "dock" {
+      filename = "${path.module}/dock.txt"
+      content  = "masts: 1"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null
+    """,
+)
+
+# boss (8.R) -------------------------------------------------------------------------------------------------------------
+tf_lab(
+    "the-vault",
+    "🔴 Terraform BOSS · The vault",
+    "A backend that won't initialise, state in the wrong place, drift and an open Git door. Only the goal is given.",
+    f"""
+    # 🔴 BOSS · The vault
+
+    The yard in `/root/yard8` was built with local state. Someone started moving it to the vault, and stopped halfway.
+    You only get the **goal**.
+
+    Covers Module 8: {L("8.2", "local backend")} · {L("8.4", "remote state")} · {L("8.5", "migrating")} · {L("8.6", "drift")}
+    """,
+    [
+        {"title": "Lock it in the vault",
+         "text": """
+         In `/root/yard8`, reach this state:
+         - `terraform init` succeeds, and the state lives in **`vault/terraform.tfstate`**
+         - no `terraform.tfstate` (or backup) is left in `/root/yard8`
+         - `random_pet.ship` keeps its **current name**: nothing is rebuilt that doesn't need to be
+         - `hull.txt` says what the blueprint says
+         - `terraform plan` says **No changes**
+         - Git ignores every state file (the folder is a repository)
+         """,
+         "hint": "Backend blocks can't use variables. Migrate (don't reconfigure) to keep the ship. Drift is fixed by a normal apply. One .gitignore pattern covers all state files.",
+         "solve": """cd $R/yard8
+sed -i 's|path = var.vault_path|path = "vault/terraform.tfstate"|' backend.tf
+terraform init -migrate-state -force-copy -input=false
+rm -f terraform.tfstate terraform.tfstate.backup
+terraform apply -auto-approve
+printf '*.tfstate*\\n.terraform/\\n' > .gitignore""",
+         "wrong": """cd $R/yard8
+sed -i 's|path = var.vault_path|path = "vault/terraform.tfstate"|' backend.tf
+terraform init -reconfigure -input=false
+rm -f terraform.tfstate terraform.tfstate.backup
+terraform apply -auto-approve
+printf '*.tfstate*\\n.terraform/\\n' > .gitignore""",
+         "verify": """
+         cd $R/yard8
+         [ -f vault/terraform.tfstate ] && [ ! -f terraform.tfstate ] && [ ! -f terraform.tfstate.backup ] || exit 1
+         [ "$(attr . random_pet.ship id)" = "$(cat /tmp/yard8_pet)" ] || exit 1
+         [ "$(cat hull.txt)" = "oak, 3 masts" ] || exit 1
+         noplan . || exit 1
+         git check-ignore -q terraform.tfstate && git check-ignore -q vault/terraform.tfstate && git check-ignore -q terraform.tfstate.backup || exit 1
+         """},
+    ],
+    done("""
+    No variables in a backend block, `init -migrate-state` (never `-reconfigure` when the state must survive),
+    clean up the old local file, let a normal apply fix drift, and keep state out of Git: Module 8 in one vault. ⚒
+    """),
+    setup="""
+    mkdir -p $R/yard8 && cd $R/yard8
+    """ + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "random_pet" "ship" {}
+    ''') + hcl("variables.tf", '''
+    variable "vault_path" {
+      type    = string
+      default = "vault/terraform.tfstate"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    terraform show -json | $PY -c "import json,sys; print([r['values']['id'] for r in json.load(sys.stdin)['values']['root_module']['resources'] if r['address']=='random_pet.ship'][0])" > /tmp/yard8_pet
+    """ + hcl("backend.tf", '''
+    terraform {
+      backend "local" {
+        path = var.vault_path
+      }
+    }
+    ''') + """
+    echo "painted pink" > hull.txt
+    git init -q . 2>/dev/null || true
+    """,
+)
+
 labkit.structure(TF, ORDER)
 with open(os.path.join(ROOT, "tools", "tf_spec.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump(SPEC, f, indent=1)
@@ -3177,7 +3598,9 @@ LINKS = {"0.2": "first-apply", "0.3": "first-apply", "3.1": "first-apply", "2.1"
          "6.1": "two-ships", "6.2": "two-ships", "6.3": "bunk-shift", "6.4": "bunk-shift", "6.5": "fleet-map",
          "6.6": "crate", "6.R": "fleet-yard",
          "7.1": "hidden-orders", "7.2": "shipyard-rules", "7.3": "shipyard-rules", "7.4": "timber-change",
-         "7.5": "order-inspector", "7.6": "order-inspector", "7.7": "lookout", "7.8": "lookout", "7.R": "dock-rules"}
+         "7.5": "order-inspector", "7.6": "order-inspector", "7.7": "lookout", "7.8": "lookout", "7.R": "dock-rules",
+         "8.1": "ledger-reading", "8.2": "ledger-reading", "8.4": "harbor-vault", "8.5": "harbor-vault",
+         "8.6": "pink-hull", "8.7": "pink-hull", "8.9": "slipways", "8.R": "the-vault"}
 with open(os.path.join(ROOT, "labs-terraform.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump({"_comment": "Terraform lesson code -> Killercoda lab URL (lab_links.py --course terraform)",
                **{k: KC + v for k, v in LINKS.items()}}, f, indent=2, ensure_ascii=False)

@@ -1,0 +1,24 @@
+{
+  "title": "🔴 Terraform BOSS · The vault",
+  "description": "A backend that won't initialise, state in the wrong place, drift and an open Git door. Only the goal is given.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Lock it in the vault",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}
