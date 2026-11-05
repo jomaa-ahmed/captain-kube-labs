@@ -1,0 +1,24 @@
+{
+  "title": "🔴 Terraform BOSS · The audit",
+  "description": "Import, rename, hand over and fix, without rebuilding or deleting anything. Only the goal is given.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Pass the audit",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

@@ -28,8 +28,10 @@ ORDER = ["first-apply", "fix-the-blueprint", "references", "layout-and-fmt", "re
          "hidden-orders", "shipyard-rules", "timber-change", "order-inspector", "lookout",
          "dock-rules",
          "ledger-reading", "harbor-vault", "pink-hull", "slipways",
-         "the-vault"]
-BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard", "dock-rules", "the-vault"}
+         "the-vault",
+         "the-index", "stray-ship", "new-names", "hand-over", "four-doors",
+         "the-audit"]
+BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard", "dock-rules", "the-vault", "the-audit"}
 
 PRE = """\
 R=${LABROOT:-/root}; PY=${PY:-python3}
@@ -3582,6 +3584,569 @@ printf '*.tfstate*\\n.terraform/\\n' > .gitignore""",
     """,
 )
 
+# 9.1 · inspecting state ---------------------------------------------------------------------------------------------
+tf_lab(
+    "the-index",
+    "🟢 Terraform # · The index",
+    "Read outputs and attributes the way scripts do: output -raw and state show.",
+    f"""
+    # The index
+
+    In `/root/index`, Terraform built a hull and a ship with a random name. A script on the dock needs two facts
+    from the ledger, and it can't cope with quotes.
+
+    Lesson: {L("9.1", "Inspecting state")}
+    """,
+    [
+        {"title": "The ship's name, raw",
+         "text": """
+         Write the value of the output `ship` into `/root/index/name.txt`, **without quotes**, using a terraform command
+         (no copy-paste, no editing the state).
+         """,
+         "hint": "`terraform output ship` prints it with quotes; `terraform output -raw ship > name.txt` doesn't.",
+         "solve": "cd $R/index\nterraform output -raw ship > name.txt",
+         "wrong": "cd $R/index\nterraform output ship > name.txt",
+         "verify": """
+         cd $R/index
+         [ "$(cat name.txt 2>/dev/null)" = "$(attr . random_pet.ship id)" ] || exit 1
+         """},
+        {"title": "One attribute",
+         "text": """
+         What `file_permission` does `local_file.hull` have in the state? Write the value alone into `/root/index/perm.txt`.
+         """,
+         "hint": "`terraform state show local_file.hull` lists every attribute of that one resource.",
+         "solve": "cd $R/index\nterraform state show -no-color local_file.hull\nterraform show -json | $PY -c \"import json,sys; print([r['values']['file_permission'] for r in json.load(sys.stdin)['values']['root_module']['resources'] if r['address']=='local_file.hull'][0])\" > perm.txt",
+         "wrong": "cd $R/index\necho 0644 > perm.txt",
+         "verify": """
+         cd $R/index
+         [ "$(tr -d ' \\n\\r"' < perm.txt 2>/dev/null)" = "$(attr . local_file.hull file_permission)" ] || exit 1
+         """},
+    ],
+    done("""
+    `terraform state list` is the index, `state show ADDRESS` one page, `terraform show` everything, and
+    `terraform output -raw NAME` one value the way scripts want it. Named and `-json` outputs print sensitive values.
+    """, "Terraform · The stray ship"),
+    setup="""
+    mkdir -p $R/index && cd $R/index
+    """ + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "random_pet" "ship" {}
+
+    output "ship" {
+      value = random_pet.ship.id
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# 9.2 · import -----------------------------------------------------------------------------------------------------------
+tf_lab(
+    "stray-ship",
+    "🟡 Terraform # · The stray ship",
+    "Adopt existing objects: an import block with generated config, then the terraform import command.",
+    f"""
+    # The stray ship
+
+    Two dock codes already exist: someone made them by hand. Terraform must adopt them **with their current values**.
+    The random provider lets you import a `random_string` by giving its value as the ID.
+
+    Lesson: {L("9.2", "Importing existing infrastructure")}
+    """,
+    [
+        {"title": "With an import block",
+         "text": """
+         In `/root/stray`, adopt the code `Kestrel42` as **`random_string.code`**:
+
+         - write an `import` block, and let Terraform write the resource block (`-generate-config-out=generated.tf`)
+         - clean the generated file: no `= null` lines left
+         - apply. `random_string.code` must have the result `Kestrel42`, and the plan must end with **No changes**
+         """,
+         "hint": "`import { to = random_string.code  id = \"Kestrel42\" }` in import.tf, then `terraform plan -generate-config-out=generated.tf`, `sed -i '/= null/d' generated.tf`, `terraform apply`.",
+         "solve": """cd $R/stray
+cat > import.tf <<'HCL'
+import {
+  to = random_string.code
+  id = "Kestrel42"
+}
+HCL
+terraform plan -generate-config-out=generated.tf
+sed -i '/= null/d' generated.tf
+terraform apply -auto-approve""",
+         "wrong": """cd $R/stray
+cat > code.tf <<'HCL'
+resource "random_string" "code" {
+  length = 9
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/stray
+         [ "$(attr . random_string.code result)" = "Kestrel42" ] || exit 1
+         ! grep -q '= null' *.tf || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "The old command",
+         "text": """
+         A second code exists: `Osprey7`. Adopt it as **`random_string.osprey`**, this time with the
+         **`terraform import`** command. It needs the resource block first (`length = 7`).
+
+         The plan must end with **No changes**.
+         """,
+         "hint": "Write `resource \"random_string\" \"osprey\" { length = 7 }`, then `terraform import random_string.osprey Osprey7`. One resource per command, and no plan before it.",
+         "solve": """cd $R/stray
+cat > osprey.tf <<'HCL'
+resource "random_string" "osprey" {
+  length = 7
+}
+HCL
+terraform import random_string.osprey Osprey7
+terraform plan""",
+         "wrong": """cd $R/stray
+cat > osprey.tf <<'HCL'
+resource "random_string" "osprey" {
+  length = 7
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/stray
+         [ "$(attr . random_string.osprey result)" = "Osprey7" ] || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    An import block + `-generate-config-out` gives you a plan, many imports at once and a record in code; clean the
+    generated file before you keep it. `terraform import` does one resource, needs the block first, and shows no plan.
+    Not every resource supports import: check the registry docs.
+    """, "Terraform · New names"),
+    setup="""
+    mkdir -p $R/stray && cd $R/stray
+    """ + hcl("versions.tf", '''
+    terraform {
+      required_providers {
+        random = {
+          source = "hashicorp/random"
+        }
+      }
+    }
+    ''') + """
+    terraform init -input=false >/dev/null
+    """,
+)
+
+# 9.3 · moved ------------------------------------------------------------------------------------------------------------
+tf_lab(
+    "new-names",
+    "🟡 Terraform # · New names",
+    "Rename a resource and switch count to for_each with moved blocks, without rebuilding anything.",
+    f"""
+    # New names
+
+    In `/root/names`, the hull and two bunks are built. The team wants better names, and the bunks keyed by crew
+    member. Nothing real may be rebuilt: Terraform must only learn the new addresses.
+
+    Lesson: {L("9.3", "Renaming with moved")}
+    """,
+    [
+        {"title": "The main hull",
+         "text": """
+         Rename `local_file.hull` to **`local_file.main_hull`** in the code, with a record that other environments
+         can apply too. Apply: the hull must not be rebuilt, and the plan must end with **No changes**.
+         """,
+         "hint": "Rename the block, then add `moved { from = local_file.hull  to = local_file.main_hull }` and apply. `terraform state mv` would work here, but leaves no record in the code.",
+         "solve": """cd $R/names
+sed -i 's/resource "local_file" "hull"/resource "local_file" "main_hull"/' main.tf
+cat >> main.tf <<'HCL'
+
+moved {
+  from = local_file.hull
+  to   = local_file.main_hull
+}
+HCL
+terraform apply -auto-approve""",
+         "wrong": """cd $R/names
+sed -i 's/resource "local_file" "hull"/resource "local_file" "main_hull"/' main.tf
+terraform state mv local_file.hull local_file.main_hull""",
+         "verify": """
+         cd $R/names
+         grep -q '^moved' main.tf || exit 1
+         st . | grep -qx local_file.main_hull || exit 1
+         ! st . | grep -qx local_file.hull || exit 1
+         [ "$(stat -c %Y hull.txt)" = "1577836800" ] || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Bunks by name",
+         "text": """
+         Switch `local_file.bunk` from `count` to **`for_each = toset(var.crew)`**, keyed by name
+         (`bunk["Ada"]`, `bunk["Bo"]`). Same files, nothing rebuilt, plan: **No changes**.
+         """,
+         "hint": "Keep the filename `bunk-<name>.txt` and the content. Add one moved block per bunk: `from = local_file.bunk[0]  to = local_file.bunk[\"Ada\"]`, and [1] → [\"Bo\"].",
+         "solve": """cd $R/names
+$PY - <<'PY'
+import re
+t=open('main.tf').read()
+new='''resource "local_file" "bunk" {
+  for_each = toset(var.crew)
+  filename = "${path.module}/bunk-${each.key}.txt"
+  content  = "Bunk of ${each.key}"
+}
+
+moved {
+  from = local_file.bunk[0]
+  to   = local_file.bunk["Ada"]
+}
+
+moved {
+  from = local_file.bunk[1]
+  to   = local_file.bunk["Bo"]
+}'''
+t=re.sub(r'resource "local_file" "bunk" \\{.*?\\n\\}', new, t, flags=re.S)
+open('main.tf','w').write(t)
+PY
+terraform apply -auto-approve""",
+         "wrong": """cd $R/names
+$PY - <<'PY'
+import re
+t=open('main.tf').read()
+new='''resource "local_file" "bunk" {
+  for_each = toset(var.crew)
+  filename = "${path.module}/bunk-${each.key}.txt"
+  content  = "Bunk of ${each.key}"
+}'''
+t=re.sub(r'resource "local_file" "bunk" \\{.*?\\n\\}', new, t, flags=re.S)
+open('main.tf','w').write(t)
+PY
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/names
+         st . | grep -qx 'local_file.bunk\\["Ada"\\]' || exit 1
+         st . | grep -qx 'local_file.bunk\\["Bo"\\]' || exit 1
+         [ "$(stat -c %Y bunk-Ada.txt)" = "1577836800" ] && [ "$(stat -c %Y bunk-Bo.txt)" = "1577836800" ] || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    Terraform only sees addresses: a rename alone is destroy + create. A `moved` block changes the address and keeps
+    the real object, with a plan and a record every environment can apply. Keep moved blocks until all have applied them.
+    """, "Terraform · Hand over"),
+    setup="""
+    mkdir -p $R/names && cd $R/names
+    """ + hcl("main.tf", '''
+    variable "crew" {
+      type    = list(string)
+      default = ["Ada", "Bo"]
+    }
+
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "local_file" "bunk" {
+      count    = length(var.crew)
+      filename = "${path.module}/bunk-${var.crew[count.index]}.txt"
+      content  = "Bunk of ${var.crew[count.index]}"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    touch -d @1577836800 hull.txt bunk-Ada.txt bunk-Bo.txt 2>/dev/null || true
+    """,
+)
+
+# 9.4 + 9.5 · removed and logging -----------------------------------------------------------------------------------------
+tf_lab(
+    "hand-over",
+    "🟡 Terraform # · Hand over",
+    "Stop managing a resource without destroying it, then keep a debug log of a plan.",
+    f"""
+    # Hand over
+
+    In `/root/handover`, the logbook belongs to another team from today. Terraform must let go of it, and the
+    file must stay exactly where it is. Then the other team asks for a debug log.
+
+    Lessons: {L("9.4", "Letting go with removed")} · {L("9.5", "Verbose logging")}
+    """,
+    [
+        {"title": "Let go of the logbook",
+         "text": """
+         Make Terraform **stop managing** `local_file.logbook` without deleting `logbook.txt`, with a plan you can review.
+         Remove its resource block. Plan: **No changes** at the end, and `logbook.txt` still there.
+         """,
+         "hint": "Replace the resource block with `removed { from = local_file.logbook  lifecycle { destroy = false } }`, then `terraform apply`. Just deleting the block would destroy the file.",
+         "solve": """cd $R/handover
+$PY - <<'PY'
+import re
+t=open('main.tf').read()
+t=re.sub(r'resource "local_file" "logbook" \\{.*?\\n\\}', 'removed {\\n  from = local_file.logbook\\n\\n  lifecycle {\\n    destroy = false\\n  }\\n}', t, flags=re.S)
+open('main.tf','w').write(t)
+PY
+terraform apply -auto-approve""",
+         "wrong": """cd $R/handover
+$PY - <<'PY'
+import re
+t=open('main.tf').read()
+t=re.sub(r'resource "local_file" "logbook" \\{.*?\\n\\}', '', t, flags=re.S)
+open('main.tf','w').write(t)
+PY
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/handover
+         [ "$(cat logbook.txt 2>/dev/null)" = "every voyage" ] || exit 1
+         ! st . | grep -q 'local_file.logbook' || exit 1
+         ! grep -q 'resource "local_file" "logbook"' main.tf || exit 1
+         grep -q '^removed' main.tf || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "The foreman's diary",
+         "text": """
+         Save a **DEBUG** log of `terraform plan` into `/root/handover/plan.log`, using Terraform's own logging.
+         """,
+         "hint": "Two environment variables: `TF_LOG=DEBUG TF_LOG_PATH=./plan.log terraform plan`. TF_LOG_PATH alone logs nothing.",
+         "solve": "cd $R/handover\nTF_LOG=DEBUG TF_LOG_PATH=./plan.log terraform plan",
+         "wrong": "cd $R/handover\nTF_LOG_PATH=./plan.log terraform plan",
+         "verify": """
+         cd $R/handover
+         grep -q '\\[DEBUG\\]' plan.log 2>/dev/null || exit 1
+         grep -q 'Terraform version' plan.log || exit 1
+         """},
+    ],
+    done("""
+    Deleting a block destroys the real object; `removed` with `destroy = false` only lets go. `TF_LOG` turns the logs
+    on (TRACE → ERROR) and `TF_LOG_PATH` keeps them in a file. Logs can contain secrets.
+    """, "Terraform · Four doors"),
+    setup="""
+    mkdir -p $R/handover && cd $R/handover
+    """ + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "local_file" "logbook" {
+      filename = "${path.module}/logbook.txt"
+      content  = "every voyage"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    """,
+)
+
+# 9.6 · reading errors ------------------------------------------------------------------------------------------------------
+tf_lab(
+    "four-doors",
+    "🔧 Terraform # · Four doors",
+    "A language error, a cycle and a provider error: read each one and fix it at the right door.",
+    f"""
+    # Four doors
+
+    The blueprint in `/root/doors` won't validate. Read every error: is it language, state, core or provider?
+
+    Lesson: {L("9.6", "Reading errors")}
+    """,
+    [
+        {"title": "Language and core",
+         "text": """
+         Make `terraform validate` succeed and apply. The goal: `orders.txt` says `build 3 masts`, and both
+         `crew.txt` and `log.txt` copy the **orders**.
+         """,
+         "hint": "Validate shows a typo (Did you mean \\\"filename\\\"?) and an `Error: Cycle`: crew reads the log and the log reads the crew. Point both at `local_file.orders.content`.",
+         "solve": """cd $R/doors
+sed -i 's/filname/filename/' main.tf
+sed -i 's/local_file.log.content/local_file.orders.content/; s/local_file.crew.content/local_file.orders.content/' main.tf
+terraform validate
+terraform apply -auto-approve""",
+         "wrong": "cd $R/doors\nsed -i 's/filname/filename/' main.tf\nterraform apply -auto-approve",
+         "verify": """
+         cd $R/doors
+         terraform validate >/dev/null 2>&1 || exit 1
+         for f in orders crew log; do [ "$(cat $f.txt 2>/dev/null)" = "build 3 masts" ] || exit 1; done
+         noplan . || exit 1
+         """},
+        {"title": "The supplier's door",
+         "background": """
+         cd $R/doors
+         mkdir -p hull.txt/old
+         cat >> main.tf <<'HCL'
+
+         resource "local_file" "hull" {
+           filename = "${path.module}/hull.txt"
+           content  = "oak"
+         }
+         HCL
+         sed -i 's/^         //' main.tf
+         """,
+         "text": """
+         Someone added `local_file.hull`. Validate passes, but `terraform apply` fails. Read the error: which door is it?
+
+         The folder `hull.txt/` is an old leftover nobody needs. Fix it so `hull.txt` is a file saying `oak`,
+         and the plan ends with **No changes**. The resource keeps its filename.
+         """,
+         "hint": "`Error: Create local file error ... is a directory` comes from the provider: the real world is in the way. Remove the folder (`rm -rf hull.txt`) and apply again.",
+         "solve": "cd $R/doors\nterraform apply -auto-approve || true\nrm -rf hull.txt\nterraform apply -auto-approve",
+         "wrong": "cd $R/doors\nsed -i 's|/hull.txt\"|/hull2.txt\"|' main.tf\nterraform apply -auto-approve",
+         "verify": """
+         cd $R/doors
+         [ -f hull.txt ] && [ "$(cat hull.txt)" = "oak" ] || exit 1
+         grep -q '/hull.txt"' main.tf || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    Language errors (validate catches them), state errors (locks, backends), core errors (`Error: Cycle`) and provider
+    errors (bad values at plan, the real world at apply). The first line says what, `on main.tf line N` says where.
+    """, "BOSS · The audit"),
+    setup="""
+    mkdir -p $R/doors && cd $R/doors
+    """ + hcl("main.tf", '''
+    resource "local_file" "orders" {
+      filname = "${path.module}/orders.txt"
+      content = "build 3 masts"
+    }
+
+    resource "local_file" "crew" {
+      filename = "${path.module}/crew.txt"
+      content  = local_file.log.content
+    }
+
+    resource "local_file" "log" {
+      filename = "${path.module}/log.txt"
+      content  = local_file.crew.content
+    }
+    ''') + """
+    terraform init -input=false >/dev/null
+    """,
+)
+
+# boss (9.R) ---------------------------------------------------------------------------------------------------------------
+tf_lab(
+    "the-audit",
+    "🔴 Terraform BOSS · The audit",
+    "Import, rename, hand over and fix, without rebuilding or deleting anything. Only the goal is given.",
+    f"""
+    # 🔴 BOSS · The audit
+
+    The auditors are coming to `/root/audit`. Someone renamed things, someone deleted a block, someone made a dock
+    code by hand, and the code doesn't validate. You only get the **goal**.
+
+    Covers Module 9: {L("9.2", "import")} · {L("9.3", "moved")} · {L("9.4", "removed")} · {L("9.6", "errors")}
+    """,
+    [
+        {"title": "Pass the audit",
+         "text": """
+         In `/root/audit`, reach this state:
+         - `terraform validate` succeeds and `terraform plan` says **No changes**
+         - the hull is managed as **`local_file.main_hull`**, and `hull.txt` was **not rebuilt**
+         - the logbook is **no longer managed** by Terraform, and `logbook.txt` still exists
+         - the dock code `Kestrel42` (made by hand) is managed as **`random_string.code`** with that exact value
+         """,
+         "hint": "Validate first (a typo). Then: a moved block for the rename, a removed block (destroy = false) for the logbook, an import block (plus a resource block with length = 9, or generated config) for the code.",
+         "solve": """cd $R/audit
+sed -i 's/contnet/content/' main.tf
+cat >> main.tf <<'HCL'
+
+moved {
+  from = local_file.hull
+  to   = local_file.main_hull
+}
+
+removed {
+  from = local_file.logbook
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+import {
+  to = random_string.code
+  id = "Kestrel42"
+}
+
+resource "random_string" "code" {
+  length = 9
+}
+HCL
+terraform validate
+terraform apply -auto-approve""",
+         "wrong": """cd $R/audit
+sed -i 's/contnet/content/' main.tf
+cat >> main.tf <<'HCL'
+
+removed {
+  from = local_file.logbook
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+import {
+  to = random_string.code
+  id = "Kestrel42"
+}
+
+resource "random_string" "code" {
+  length = 9
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/audit
+         terraform validate >/dev/null 2>&1 || exit 1
+         s=$(st .)
+         echo "$s" | grep -qx local_file.main_hull || exit 1
+         ! echo "$s" | grep -qx local_file.hull || exit 1
+         ! echo "$s" | grep -q logbook || exit 1
+         [ "$(cat logbook.txt 2>/dev/null)" = "every voyage" ] || exit 1
+         [ "$(stat -c %Y hull.txt)" = "1577836800" ] || exit 1
+         [ "$(attr . random_string.code result)" = "Kestrel42" ] || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    `moved` for the new name, `removed` with `destroy = false` to let go, an import block to adopt, and validate
+    to find the typo first: Terraform's view of the world changed, and the world didn't. Module 9 in one audit. ⚒
+    """),
+    setup="""
+    mkdir -p $R/audit && cd $R/audit
+    """ + hcl("versions.tf", '''
+    terraform {
+      required_providers {
+        local = {
+          source = "hashicorp/local"
+        }
+        random = {
+          source = "hashicorp/random"
+        }
+      }
+    }
+    ''') + hcl("main.tf", '''
+    resource "local_file" "hull" {
+      filename = "${path.module}/hull.txt"
+      content  = "oak, 3 masts"
+    }
+
+    resource "local_file" "logbook" {
+      filename = "${path.module}/logbook.txt"
+      content  = "every voyage"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    touch -d @1577836800 hull.txt 2>/dev/null || true
+    """ + hcl("main.tf", '''
+    resource "local_file" "main_hull" {
+      filename = "${path.module}/hull.txt"
+      contnet  = "oak, 3 masts"
+    }
+    ''') + """
+    """,
+)
+
 labkit.structure(TF, ORDER)
 with open(os.path.join(ROOT, "tools", "tf_spec.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump(SPEC, f, indent=1)
@@ -3600,7 +4165,9 @@ LINKS = {"0.2": "first-apply", "0.3": "first-apply", "3.1": "first-apply", "2.1"
          "7.1": "hidden-orders", "7.2": "shipyard-rules", "7.3": "shipyard-rules", "7.4": "timber-change",
          "7.5": "order-inspector", "7.6": "order-inspector", "7.7": "lookout", "7.8": "lookout", "7.R": "dock-rules",
          "8.1": "ledger-reading", "8.2": "ledger-reading", "8.4": "harbor-vault", "8.5": "harbor-vault",
-         "8.6": "pink-hull", "8.7": "pink-hull", "8.9": "slipways", "8.R": "the-vault"}
+         "8.6": "pink-hull", "8.7": "pink-hull", "8.9": "slipways", "8.R": "the-vault",
+         "9.1": "the-index", "9.2": "stray-ship", "9.3": "new-names", "9.4": "hand-over", "9.5": "hand-over",
+         "9.6": "four-doors", "9.R": "the-audit"}
 with open(os.path.join(ROOT, "labs-terraform.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump({"_comment": "Terraform lesson code -> Killercoda lab URL (lab_links.py --course terraform)",
                **{k: KC + v for k, v in LINKS.items()}}, f, indent=2, ensure_ascii=False)

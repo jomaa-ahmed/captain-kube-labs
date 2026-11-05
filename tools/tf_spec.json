@@ -434,5 +434,79 @@
     "wrong": "cd $R/yard8\nsed -i 's|path = var.vault_path|path = \"vault/terraform.tfstate\"|' backend.tf\nterraform init -reconfigure -input=false\nrm -f terraform.tfstate terraform.tfstate.backup\nterraform apply -auto-approve\nprintf '*.tfstate*\\n.terraform/\\n' > .gitignore"
    }
   ]
+ },
+ {
+  "folder": "the-index",
+  "steps": [
+   {
+    "solve": "cd $R/index\nterraform output -raw ship > name.txt",
+    "wrong": "cd $R/index\nterraform output ship > name.txt"
+   },
+   {
+    "solve": "cd $R/index\nterraform state show -no-color local_file.hull\nterraform show -json | $PY -c \"import json,sys; print([r['values']['file_permission'] for r in json.load(sys.stdin)['values']['root_module']['resources'] if r['address']=='local_file.hull'][0])\" > perm.txt",
+    "wrong": "cd $R/index\necho 0644 > perm.txt"
+   }
+  ]
+ },
+ {
+  "folder": "stray-ship",
+  "steps": [
+   {
+    "solve": "cd $R/stray\ncat > import.tf <<'HCL'\nimport {\n  to = random_string.code\n  id = \"Kestrel42\"\n}\nHCL\nterraform plan -generate-config-out=generated.tf\nsed -i '/= null/d' generated.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/stray\ncat > code.tf <<'HCL'\nresource \"random_string\" \"code\" {\n  length = 9\n}\nHCL\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/stray\ncat > osprey.tf <<'HCL'\nresource \"random_string\" \"osprey\" {\n  length = 7\n}\nHCL\nterraform import random_string.osprey Osprey7\nterraform plan",
+    "wrong": "cd $R/stray\ncat > osprey.tf <<'HCL'\nresource \"random_string\" \"osprey\" {\n  length = 7\n}\nHCL\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "new-names",
+  "steps": [
+   {
+    "solve": "cd $R/names\nsed -i 's/resource \"local_file\" \"hull\"/resource \"local_file\" \"main_hull\"/' main.tf\ncat >> main.tf <<'HCL'\n\nmoved {\n  from = local_file.hull\n  to   = local_file.main_hull\n}\nHCL\nterraform apply -auto-approve",
+    "wrong": "cd $R/names\nsed -i 's/resource \"local_file\" \"hull\"/resource \"local_file\" \"main_hull\"/' main.tf\nterraform state mv local_file.hull local_file.main_hull"
+   },
+   {
+    "solve": "cd $R/names\n$PY - <<'PY'\nimport re\nt=open('main.tf').read()\nnew='''resource \"local_file\" \"bunk\" {\n  for_each = toset(var.crew)\n  filename = \"${path.module}/bunk-${each.key}.txt\"\n  content  = \"Bunk of ${each.key}\"\n}\n\nmoved {\n  from = local_file.bunk[0]\n  to   = local_file.bunk[\"Ada\"]\n}\n\nmoved {\n  from = local_file.bunk[1]\n  to   = local_file.bunk[\"Bo\"]\n}'''\nt=re.sub(r'resource \"local_file\" \"bunk\" \\{.*?\\n\\}', new, t, flags=re.S)\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve",
+    "wrong": "cd $R/names\n$PY - <<'PY'\nimport re\nt=open('main.tf').read()\nnew='''resource \"local_file\" \"bunk\" {\n  for_each = toset(var.crew)\n  filename = \"${path.module}/bunk-${each.key}.txt\"\n  content  = \"Bunk of ${each.key}\"\n}'''\nt=re.sub(r'resource \"local_file\" \"bunk\" \\{.*?\\n\\}', new, t, flags=re.S)\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "hand-over",
+  "steps": [
+   {
+    "solve": "cd $R/handover\n$PY - <<'PY'\nimport re\nt=open('main.tf').read()\nt=re.sub(r'resource \"local_file\" \"logbook\" \\{.*?\\n\\}', 'removed {\\n  from = local_file.logbook\\n\\n  lifecycle {\\n    destroy = false\\n  }\\n}', t, flags=re.S)\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve",
+    "wrong": "cd $R/handover\n$PY - <<'PY'\nimport re\nt=open('main.tf').read()\nt=re.sub(r'resource \"local_file\" \"logbook\" \\{.*?\\n\\}', '', t, flags=re.S)\nopen('main.tf','w').write(t)\nPY\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/handover\nTF_LOG=DEBUG TF_LOG_PATH=./plan.log terraform plan",
+    "wrong": "cd $R/handover\nTF_LOG_PATH=./plan.log terraform plan"
+   }
+  ]
+ },
+ {
+  "folder": "four-doors",
+  "steps": [
+   {
+    "solve": "cd $R/doors\nsed -i 's/filname/filename/' main.tf\nsed -i 's/local_file.log.content/local_file.orders.content/; s/local_file.crew.content/local_file.orders.content/' main.tf\nterraform validate\nterraform apply -auto-approve",
+    "wrong": "cd $R/doors\nsed -i 's/filname/filename/' main.tf\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/doors\nterraform apply -auto-approve || true\nrm -rf hull.txt\nterraform apply -auto-approve",
+    "wrong": "cd $R/doors\nsed -i 's|/hull.txt\"|/hull2.txt\"|' main.tf\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "the-audit",
+  "steps": [
+   {
+    "solve": "cd $R/audit\nsed -i 's/contnet/content/' main.tf\ncat >> main.tf <<'HCL'\n\nmoved {\n  from = local_file.hull\n  to   = local_file.main_hull\n}\n\nremoved {\n  from = local_file.logbook\n\n  lifecycle {\n    destroy = false\n  }\n}\n\nimport {\n  to = random_string.code\n  id = \"Kestrel42\"\n}\n\nresource \"random_string\" \"code\" {\n  length = 9\n}\nHCL\nterraform validate\nterraform apply -auto-approve",
+    "wrong": "cd $R/audit\nsed -i 's/contnet/content/' main.tf\ncat >> main.tf <<'HCL'\n\nremoved {\n  from = local_file.logbook\n\n  lifecycle {\n    destroy = false\n  }\n}\n\nimport {\n  to = random_string.code\n  id = \"Kestrel42\"\n}\n\nresource \"random_string\" \"code\" {\n  length = 9\n}\nHCL\nterraform apply -auto-approve"
+   }
+  ]
  }
 ]
