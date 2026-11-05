@@ -30,8 +30,10 @@ ORDER = ["first-apply", "fix-the-blueprint", "references", "layout-and-fmt", "re
          "ledger-reading", "harbor-vault", "pink-hull", "slipways",
          "the-vault",
          "the-index", "stray-ship", "new-names", "hand-over", "four-doors",
-         "the-audit"]
-BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard", "dock-rules", "the-vault", "the-audit"}
+         "the-audit",
+         "first-kit", "sealed-kit", "kit-sources", "fleet-kit",
+         "kit-yard"]
+BOSSES = {"shipyard-in-trouble", "order-form", "fleet-yard", "dock-rules", "the-vault", "the-audit", "kit-yard"}
 
 PRE = """\
 R=${LABROOT:-/root}; PY=${PY:-python3}
@@ -4147,6 +4149,588 @@ terraform apply -auto-approve""",
     """,
 )
 
+DOCK_MODULE = hcl("modules/dock/variables.tf", '''
+    variable "name" {
+      type        = string
+      description = "Ship name"
+    }
+
+    variable "masts" {
+      type    = number
+      default = 1
+    }
+    ''') + hcl("modules/dock/main.tf", '''
+    resource "local_file" "this" {
+      filename = "${path.root}/dock-${var.name}.txt"
+      content  = "${var.name}: ${var.masts} masts"
+    }
+    ''') + hcl("modules/dock/outputs.tf", '''
+    output "file" {
+      value = local_file.this.filename
+    }
+    ''')
+
+# 10.1 + 10.2 · calling a module -------------------------------------------------------------------------------------
+tf_lab(
+    "first-kit",
+    "🟢 Terraform # · First kit",
+    "Call a child module with a module block, then read its output from the root.",
+    f"""
+    # First kit
+
+    In `/root/kit`, the dock kit is ready in `modules/dock` (inputs `name` and `masts`, output `file`).
+    The root module (`main.tf`) is still empty.
+
+    Lessons: {L("10.1", "What a module is")} · {L("10.2", "Calling a module")}
+    """,
+    [
+        {"title": "Order a dock",
+         "text": """
+         In `main.tf`, call the dock module as **`kestrel`** with `name = "kestrel"` and `masts = 3`, and apply.
+
+         `dock-kestrel.txt` must say `kestrel: 3 masts`, and the state must list `module.kestrel.local_file.this`.
+         """,
+         "hint": "`module \"kestrel\" { source = \"./modules/dock\"  name = \"kestrel\"  masts = 3 }`. A new module call needs `terraform init` first.",
+         "solve": """cd $R/kit
+cat > main.tf <<'HCL'
+module "kestrel" {
+  source = "./modules/dock"
+  name   = "kestrel"
+  masts  = 3
+}
+HCL
+terraform init
+terraform apply -auto-approve""",
+         "wrong": """cd $R/kit
+cat > main.tf <<'HCL'
+resource "local_file" "this" {
+  filename = "${path.root}/dock-kestrel.txt"
+  content  = "kestrel: 3 masts"
+}
+HCL
+terraform init
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/kit
+         st . | grep -qx module.kestrel.local_file.this || exit 1
+         [ "$(cat dock-kestrel.txt 2>/dev/null)" = "kestrel: 3 masts" ] || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Read the receipt",
+         "text": """
+         Add a root output **`kestrel_file`** that returns the module's `file` output, and apply.
+         `terraform output -raw kestrel_file` must print `./dock-kestrel.txt`.
+         """,
+         "hint": "Module results are `module.LABEL.OUTPUT`: `output \"kestrel_file\" { value = module.kestrel.file }`. The resources inside the module aren't reachable from the root.",
+         "solve": """cd $R/kit
+cat >> main.tf <<'HCL'
+
+output "kestrel_file" {
+  value = module.kestrel.file
+}
+HCL
+terraform apply -auto-approve
+terraform output -raw kestrel_file""",
+         "wrong": """cd $R/kit
+cat >> main.tf <<'HCL'
+
+output "kestrel_file" {
+  value = module.kestrel.local_file.this.filename
+}
+HCL
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/kit
+         [ "$(terraform output -raw kestrel_file 2>/dev/null)" = "./dock-kestrel.txt" ] || exit 1
+         grep -q 'module.kestrel.file' main.tf || exit 1
+         """},
+    ],
+    done("""
+    A module is a folder of .tf files; the root calls it with a `module` block (label, `source`, inputs) and needs
+    `terraform init` for every new call. Resources inside get addresses like `module.kestrel.local_file.this`,
+    and only outputs come back: `module.kestrel.file`.
+    """, "Terraform · Sealed kit"),
+    setup="""
+    mkdir -p $R/kit/modules/dock && cd $R/kit
+    """ + DOCK_MODULE + """
+    echo '# call modules/dock here' > main.tf
+    """,
+)
+
+# 10.4 · variable scope ------------------------------------------------------------------------------------------------
+tf_lab(
+    "sealed-kit",
+    "🔧 Terraform # · Sealed kit",
+    "A module can't see the root's variables, and the root can't see inside a module. Pass values in and out.",
+    f"""
+    # Sealed kit
+
+    In `/root/sealed`, the root has `var.env`, and the dock module tries to use it. `terraform validate` fails.
+
+    Lesson: {L("10.4", "Variable scope")}
+    """,
+    [
+        {"title": "Through the order form",
+         "text": """
+         Make the module use the **root's** `var.env`: `dock-kestrel.txt` must say `prod: kestrel` and change with the
+         root's value (`terraform plan -var env=dev` must want to change it). Apply.
+         """,
+         "hint": "Declare `variable \"env\" { type = string }` in modules/dock/variables.tf (no default), and pass `env = var.env` in the module block.",
+         "solve": """cd $R/sealed
+printf '\\nvariable "env" {\\n  type = string\\n}\\n' >> modules/dock/variables.tf
+sed -i 's|  name   = "kestrel"|  name   = "kestrel"\\n  env    = var.env|' main.tf
+terraform apply -auto-approve""",
+         "wrong": """cd $R/sealed
+printf '\\nvariable "env" {\\n  type    = string\\n  default = "prod"\\n}\\n' >> modules/dock/variables.tf
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/sealed
+         terraform validate >/dev/null 2>&1 || exit 1
+         [ "$(cat dock-kestrel.txt 2>/dev/null)" = "prod: kestrel" ] || exit 1
+         terraform plan -input=false -lock=false -detailed-exitcode -var env=dev >/dev/null 2>&1; [ $? -eq 2 ] || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Through the receipt",
+         "text": """
+         The root needs the file's **content**. Add an output `content` in the module, and a root output
+         **`kestrel_content`** that returns it. `terraform output -raw kestrel_content` must print `prod: kestrel`.
+         """,
+         "hint": "Module: `output \"content\" { value = local_file.this.content }`. Root: `output \"kestrel_content\" { value = module.kestrel.content }`.",
+         "solve": """cd $R/sealed
+printf '\\noutput "content" {\\n  value = local_file.this.content\\n}\\n' >> modules/dock/outputs.tf
+printf '\\noutput "kestrel_content" {\\n  value = module.kestrel.content\\n}\\n' >> main.tf
+terraform apply -auto-approve""",
+         "wrong": """cd $R/sealed
+printf '\\noutput "kestrel_content" {\\n  value = module.kestrel.local_file.this.content\\n}\\n' >> main.tf
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/sealed
+         [ "$(terraform output -raw kestrel_content 2>/dev/null)" = "prod: kestrel" ] || exit 1
+         """},
+    ],
+    done("""
+    Every module has its own variables: values go in explicitly (`env = var.env`) and only outputs come out.
+    Locals and resources stay private. Providers are the exception: children inherit the root's.
+    """, "Terraform · Kit sources"),
+    setup="""
+    mkdir -p $R/sealed/modules/dock && cd $R/sealed
+    """ + hcl("modules/dock/variables.tf", '''
+    variable "name" {
+      type = string
+    }
+    ''') + hcl("modules/dock/main.tf", '''
+    resource "local_file" "this" {
+      filename = "${path.root}/dock-${var.name}.txt"
+      content  = "${var.env}: ${var.name}"
+    }
+    ''') + hcl("modules/dock/outputs.tf", '''
+    output "file" {
+      value = local_file.this.filename
+    }
+    ''') + hcl("main.tf", '''
+    variable "env" {
+      type    = string
+      default = "prod"
+    }
+
+    module "kestrel" {
+      source = "./modules/dock"
+      name   = "kestrel"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null 2>&1 || true
+    """,
+)
+
+# 10.3 + 10.5 · sources and versions --------------------------------------------------------------------------------------
+tf_lab(
+    "kit-sources",
+    "🟡 Terraform # · Kit sources",
+    "Use a module from the public registry with a pinned version, upgrade it on purpose, then pin a Git copy with ?ref=.",
+    f"""
+    # Kit sources
+
+    In `/root/sources` you'll use a real public module: **`cloudposse/label/null`**. It builds consistent names
+    (`namespace-stage-name`) and creates no resources, so it runs anywhere.
+
+    Lessons: {L("10.3", "Where modules come from")} · {L("10.5", "Versioning modules")}
+    """,
+    [
+        {"title": "From the catalogue, pinned",
+         "text": """
+         Call it as module **`label`** from the registry, pinned to exactly version **`0.24.1`**, with
+         `namespace = "sy"`, `stage = "prod"`, `name = "kestrel"`. Add a root output **`id`** = the module's `id`, and apply.
+
+         `terraform output -raw id` must print `sy-prod-kestrel`.
+         """,
+         "hint": "`module \"label\" { source = \"cloudposse/label/null\"  version = \"0.24.1\" ... }` and `output \"id\" { value = module.label.id }`. Then init and apply.",
+         "solve": """cd $R/sources
+cat > main.tf <<'HCL'
+module "label" {
+  source    = "cloudposse/label/null"
+  version   = "0.24.1"
+  namespace = "sy"
+  stage     = "prod"
+  name      = "kestrel"
+}
+
+output "id" {
+  value = module.label.id
+}
+HCL
+terraform init
+terraform apply -auto-approve""",
+         "wrong": """cd $R/sources
+cat > main.tf <<'HCL'
+module "label" {
+  source    = "cloudposse/label/null"
+  namespace = "sy"
+  stage     = "prod"
+  name      = "kestrel"
+}
+
+output "id" {
+  value = module.label.id
+}
+HCL
+terraform init
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/sources
+         [ "$(terraform output -raw id 2>/dev/null)" = "sy-prod-kestrel" ] || exit 1
+         $PY -c "import json,sys; m=[x for x in json.load(open('.terraform/modules/modules.json'))['Modules'] if x['Key']=='label']; sys.exit(0 if m and m[0].get('Version')=='0.24.1' else 1)" || exit 1
+         """},
+        {"title": "Upgrade on purpose, pin Git",
+         "text": """
+         1. Move `label` to exactly **`0.25.0`** (plan first: what does Terraform say?), and install it.
+         2. Add a second copy from **Git**: module **`label_git`** with source
+            `git::https://github.com/cloudposse/terraform-null-label.git`, pinned to the tag `0.25.0`,
+            `namespace = "sy"`, `stage = "dev"`, `name = "kestrel"`, and a root output **`dev_id`**.
+
+         Apply. `terraform output -raw dev_id` must print `sy-dev-kestrel`.
+         """,
+         "hint": "After changing `version`, `terraform init -upgrade` installs it. Git modules have no version argument: add `?ref=0.25.0` to the source URL.",
+         "solve": """cd $R/sources
+sed -i 's/version   = "0.24.1"/version   = "0.25.0"/' main.tf
+cat >> main.tf <<'HCL'
+
+module "label_git" {
+  source    = "git::https://github.com/cloudposse/terraform-null-label.git?ref=0.25.0"
+  namespace = "sy"
+  stage     = "dev"
+  name      = "kestrel"
+}
+
+output "dev_id" {
+  value = module.label_git.id
+}
+HCL
+terraform init -upgrade
+terraform apply -auto-approve""",
+         "wrong": """cd $R/sources
+sed -i 's/version   = "0.24.1"/version   = "0.25.0"/' main.tf
+cat >> main.tf <<'HCL'
+
+module "label_git" {
+  source    = "git::https://github.com/cloudposse/terraform-null-label.git"
+  namespace = "sy"
+  stage     = "dev"
+  name      = "kestrel"
+}
+
+output "dev_id" {
+  value = module.label_git.id
+}
+HCL
+terraform init -upgrade
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/sources
+         [ "$(terraform output -raw dev_id 2>/dev/null)" = "sy-dev-kestrel" ] || exit 1
+         $PY -c "
+import json,sys
+m={x['Key']:x for x in json.load(open('.terraform/modules/modules.json'))['Modules']}
+ok=m.get('label',{}).get('Version')=='0.25.0' and '?ref=0.25.0' in m.get('label_git',{}).get('Source','')
+sys.exit(0 if ok else 1)" || exit 1
+         """},
+    ],
+    done("""
+    Registry modules use `NAMESPACE/NAME/PROVIDER` and a `version`; Git modules pin with `?ref=`. `terraform init`
+    downloads them into `.terraform/modules`, and `init -upgrade` moves to a newer allowed version, on purpose.
+    The lock file doesn't pin modules.
+    """, "Terraform · Fleet kit"),
+    setup="""
+    mkdir -p $R/sources && cd $R/sources
+    echo '# use cloudposse/label/null here' > main.tf
+    """,
+)
+
+# 10.7 · writing your own module -------------------------------------------------------------------------------------------
+tf_lab(
+    "fleet-kit",
+    "🟡 Terraform # · Fleet kit",
+    "Turn copy-pasted resources into your own module called with for_each, without rebuilding them, then add validation.",
+    f"""
+    # Fleet kit
+
+    In `/root/fleet`, three `local_file` blocks are the same code, copy-pasted: `mast_kestrel`, `mast_osprey`,
+    `mast_wren`. They're already built. Time for a kit.
+
+    Lesson: {L("10.7", "Writing your own module")}
+    """,
+    [
+        {"title": "Make the kit",
+         "text": """
+         Create **`modules/mast`** (variables `name` and `masts`, the resource, an output `file`) and call it **once**
+         with `for_each = var.fleet` (the map is in `variables.tf`). Keep the same filenames and contents.
+
+         The three files must **not be rebuilt**, and no `local_file` block may stay in the root. Plan: **No changes**.
+         """,
+         "hint": "Module resource: `local_file \"this\"` with `filename = \"${path.root}/mast-${var.name}.txt\"`, `content = \"${var.name}: ${var.masts} masts\"`. Root: `module \"mast\" { source = \"./modules/mast\"  for_each = var.fleet  name = each.key  masts = each.value }`. Then a moved block per file: `from = local_file.mast_kestrel  to = module.mast[\"kestrel\"].local_file.this`.",
+         "solve": """cd $R/fleet
+mkdir -p modules/mast
+cat > modules/mast/variables.tf <<'HCL'
+variable "name" {
+  type        = string
+  description = "Ship name"
+}
+
+variable "masts" {
+  type        = number
+  description = "Number of masts"
+}
+HCL
+cat > modules/mast/main.tf <<'HCL'
+resource "local_file" "this" {
+  filename = "${path.root}/mast-${var.name}.txt"
+  content  = "${var.name}: ${var.masts} masts"
+}
+HCL
+cat > modules/mast/outputs.tf <<'HCL'
+output "file" {
+  value = local_file.this.filename
+}
+HCL
+cat > main.tf <<'HCL'
+module "mast" {
+  source   = "./modules/mast"
+  for_each = var.fleet
+  name     = each.key
+  masts    = each.value
+}
+
+moved {
+  from = local_file.mast_kestrel
+  to   = module.mast["kestrel"].local_file.this
+}
+
+moved {
+  from = local_file.mast_osprey
+  to   = module.mast["osprey"].local_file.this
+}
+
+moved {
+  from = local_file.mast_wren
+  to   = module.mast["wren"].local_file.this
+}
+HCL
+terraform init
+terraform apply -auto-approve""",
+         "wrong": """cd $R/fleet
+mkdir -p modules/mast
+cat > modules/mast/variables.tf <<'HCL'
+variable "name" {
+  type = string
+}
+
+variable "masts" {
+  type = number
+}
+HCL
+cat > modules/mast/main.tf <<'HCL'
+resource "local_file" "this" {
+  filename = "${path.root}/mast-${var.name}.txt"
+  content  = "${var.name}: ${var.masts} masts"
+}
+HCL
+cat > main.tf <<'HCL'
+module "mast" {
+  source   = "./modules/mast"
+  for_each = var.fleet
+  name     = each.key
+  masts    = each.value
+}
+HCL
+terraform init
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/fleet
+         [ -f modules/mast/variables.tf ] && [ -f modules/mast/outputs.tf ] || exit 1
+         ! grep -q 'resource "local_file"' main.tf || exit 1
+         for s in kestrel osprey wren; do
+           st . | grep -qx "module.mast\\[\\"$s\\"\\].local_file.this" || exit 1
+           [ "$(stat -c %Y mast-$s.txt)" = "1577836800" ] || exit 1
+         done
+         [ "$(cat mast-osprey.txt)" = "osprey: 2 masts" ] || exit 1
+         noplan . || exit 1
+         """},
+        {"title": "Inspect the order",
+         "text": """
+         A good kit rejects bad orders. Add a **validation** to the module's `masts` variable: 1 to 5.
+
+         `terraform plan -var 'fleet={"kestrel"=9}'` must fail with `Invalid value for variable`, and the normal plan
+         must still say **No changes**.
+         """,
+         "hint": "Inside `variable \"masts\"` in modules/mast/variables.tf: `validation { condition = var.masts >= 1 && var.masts <= 5  error_message = \"A ship has 1 to 5 masts.\" }`.",
+         "solve": """cd $R/fleet
+$PY - <<'PY'
+t=open('modules/mast/variables.tf').read()
+t=t.replace('description = "Number of masts"','description = "Number of masts"\\n\\n  validation {\\n    condition     = var.masts >= 1 && var.masts <= 5\\n    error_message = "A ship has 1 to 5 masts."\\n  }')
+open('modules/mast/variables.tf','w').write(t)
+PY
+terraform plan -var 'fleet={"kestrel"=9}' || true""",
+         "wrong": """cd $R/fleet
+$PY - <<'PY'
+t=open('variables.tf').read()
+t=t.replace('type = map(number)','type = map(number)\\n\\n  validation {\\n    condition     = length(var.fleet) <= 5\\n    error_message = "Too many ships."\\n  }')
+open('variables.tf','w').write(t)
+PY""",
+         "verify": """
+         cd $R/fleet
+         terraform plan -input=false -lock=false -no-color -var 'fleet={"kestrel"=9}' 2>&1 | grep -q 'Invalid value for variable' || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    A module is main + variables + outputs (+ a README). `for_each` on the module block builds a fleet from one kit,
+    `moved` blocks carry existing resources inside without a rebuild, and validation in the module protects every caller.
+    """, "BOSS · Kit yard"),
+    setup="""
+    mkdir -p $R/fleet && cd $R/fleet
+    """ + hcl("variables.tf", '''
+    variable "fleet" {
+      type = map(number)
+      default = {
+        kestrel = 3
+        osprey  = 2
+        wren    = 1
+      }
+    }
+    ''') + hcl("main.tf", '''
+    resource "local_file" "mast_kestrel" {
+      filename = "${path.root}/mast-kestrel.txt"
+      content  = "kestrel: 3 masts"
+    }
+
+    resource "local_file" "mast_osprey" {
+      filename = "${path.root}/mast-osprey.txt"
+      content  = "osprey: 2 masts"
+    }
+
+    resource "local_file" "mast_wren" {
+      filename = "${path.root}/mast-wren.txt"
+      content  = "wren: 1 masts"
+    }
+    ''') + """
+    terraform init -input=false >/dev/null && terraform apply -auto-approve -input=false >/dev/null
+    touch -d @1577836800 mast-kestrel.txt mast-osprey.txt mast-wren.txt 2>/dev/null || true
+    """,
+)
+
+# boss (10.R) -------------------------------------------------------------------------------------------------------------
+tf_lab(
+    "kit-yard",
+    "🔴 Terraform BOSS · Kit yard",
+    "Four module mistakes between a local kit and a registry kit. Only the goal is given.",
+    f"""
+    # 🔴 BOSS · Kit yard
+
+    The yard in `/root/kityard` uses a local dock kit and a registry naming kit. It won't even initialise.
+    You only get the **goal**.
+
+    Covers Module 10: {L("10.2", "calling")} · {L("10.3", "sources")} · {L("10.4", "scope")} · {L("10.5", "versions")}
+    """,
+    [
+        {"title": "Open the kit yard",
+         "text": """
+         In `/root/kityard`, reach this state:
+         - `terraform init` and `terraform validate` succeed, and `terraform plan` says **No changes**
+         - `dock-kestrel.txt` says `kestrel: 3 masts`
+         - `terraform output -raw dock_file` prints `./dock-kestrel.txt`
+         - `terraform output -raw label_id` prints `sy-prod-kestrel`, from `cloudposse/label/null` pinned to exactly **0.25.0**
+         """,
+         "hint": "Look for: a variable in a module source, a version on a local module, a missing required input, and an output that reaches inside a module.",
+         "solve": """cd $R/kityard
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('source  = var.label_source','source  = "cloudposse/label/null"')
+t=t.replace('  version = "1.0.0"\\n','')
+t=t.replace('  masts  = 3','  name   = "kestrel"\\n  masts  = 3')
+t=t.replace('module.dock.local_file.this.filename','module.dock.file')
+open('main.tf','w').write(t)
+PY
+terraform init
+terraform validate
+terraform apply -auto-approve""",
+         "wrong": """cd $R/kityard
+$PY - <<'PY'
+t=open('main.tf').read()
+t=t.replace('source  = var.label_source','source  = "cloudposse/label/null"')
+t=t.replace('  version = "1.0.0"\\n','')
+t=t.replace('  masts  = 3','  name   = "kestrel"\\n  masts  = 3')
+t=t.replace('module.dock.local_file.this.filename','module.dock.file')
+t=t.replace('version   = "0.25.0"','version   = ">= 0.24.0"')
+open('main.tf','w').write(t)
+PY
+terraform init
+terraform apply -auto-approve""",
+         "verify": """
+         cd $R/kityard
+         terraform validate >/dev/null 2>&1 || exit 1
+         [ "$(cat dock-kestrel.txt 2>/dev/null)" = "kestrel: 3 masts" ] || exit 1
+         [ "$(terraform output -raw dock_file 2>/dev/null)" = "./dock-kestrel.txt" ] || exit 1
+         [ "$(terraform output -raw label_id 2>/dev/null)" = "sy-prod-kestrel" ] || exit 1
+         grep -Eq 'version += "0\\.25\\.0"' main.tf || exit 1
+         noplan . || exit 1
+         """},
+    ],
+    done("""
+    A literal `source`, `version` only for registry modules (pinned exactly), every required input passed, and
+    results read through outputs: Module 10 in one kit yard. ⚒
+    """),
+    setup="""
+    mkdir -p $R/kityard/modules/dock && cd $R/kityard
+    """ + DOCK_MODULE + hcl("main.tf", '''
+    variable "label_source" {
+      type    = string
+      default = "cloudposse/label/null"
+    }
+
+    module "dock" {
+      source  = "./modules/dock"
+      version = "1.0.0"
+      masts  = 3
+    }
+
+    module "label" {
+      source  = var.label_source
+      version   = "0.25.0"
+      namespace = "sy"
+      stage     = "prod"
+      name      = "kestrel"
+    }
+
+    output "dock_file" {
+      value = module.dock.local_file.this.filename
+    }
+
+    output "label_id" {
+      value = module.label.id
+    }
+    ''') + """
+    """,
+)
+
 labkit.structure(TF, ORDER)
 with open(os.path.join(ROOT, "tools", "tf_spec.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump(SPEC, f, indent=1)
@@ -4167,7 +4751,9 @@ LINKS = {"0.2": "first-apply", "0.3": "first-apply", "3.1": "first-apply", "2.1"
          "8.1": "ledger-reading", "8.2": "ledger-reading", "8.4": "harbor-vault", "8.5": "harbor-vault",
          "8.6": "pink-hull", "8.7": "pink-hull", "8.9": "slipways", "8.R": "the-vault",
          "9.1": "the-index", "9.2": "stray-ship", "9.3": "new-names", "9.4": "hand-over", "9.5": "hand-over",
-         "9.6": "four-doors", "9.R": "the-audit"}
+         "9.6": "four-doors", "9.R": "the-audit",
+         "10.1": "first-kit", "10.2": "first-kit", "10.3": "kit-sources", "10.4": "sealed-kit", "10.5": "kit-sources",
+         "10.6": "kit-sources", "10.7": "fleet-kit", "10.R": "kit-yard"}
 with open(os.path.join(ROOT, "labs-terraform.json"), "w", encoding="utf-8", newline="\n") as f:
     json.dump({"_comment": "Terraform lesson code -> Killercoda lab URL (lab_links.py --course terraform)",
                **{k: KC + v for k, v in LINKS.items()}}, f, indent=2, ensure_ascii=False)

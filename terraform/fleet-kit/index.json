@@ -1,0 +1,29 @@
+{
+  "title": "🟡 Terraform 40 · Fleet kit",
+  "description": "Turn copy-pasted resources into your own module called with for_each, without rebuilding them, then add validation.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Make the kit",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "Inspect the order",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

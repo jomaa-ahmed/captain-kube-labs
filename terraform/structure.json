@@ -125,6 +125,21 @@
     },
     {
       "path": "the-audit"
+    },
+    {
+      "path": "first-kit"
+    },
+    {
+      "path": "sealed-kit"
+    },
+    {
+      "path": "kit-sources"
+    },
+    {
+      "path": "fleet-kit"
+    },
+    {
+      "path": "kit-yard"
     }
   ]
 }

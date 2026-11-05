@@ -508,5 +508,66 @@
     "wrong": "cd $R/audit\nsed -i 's/contnet/content/' main.tf\ncat >> main.tf <<'HCL'\n\nremoved {\n  from = local_file.logbook\n\n  lifecycle {\n    destroy = false\n  }\n}\n\nimport {\n  to = random_string.code\n  id = \"Kestrel42\"\n}\n\nresource \"random_string\" \"code\" {\n  length = 9\n}\nHCL\nterraform apply -auto-approve"
    }
   ]
+ },
+ {
+  "folder": "first-kit",
+  "steps": [
+   {
+    "solve": "cd $R/kit\ncat > main.tf <<'HCL'\nmodule \"kestrel\" {\n  source = \"./modules/dock\"\n  name   = \"kestrel\"\n  masts  = 3\n}\nHCL\nterraform init\nterraform apply -auto-approve",
+    "wrong": "cd $R/kit\ncat > main.tf <<'HCL'\nresource \"local_file\" \"this\" {\n  filename = \"${path.root}/dock-kestrel.txt\"\n  content  = \"kestrel: 3 masts\"\n}\nHCL\nterraform init\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/kit\ncat >> main.tf <<'HCL'\n\noutput \"kestrel_file\" {\n  value = module.kestrel.file\n}\nHCL\nterraform apply -auto-approve\nterraform output -raw kestrel_file",
+    "wrong": "cd $R/kit\ncat >> main.tf <<'HCL'\n\noutput \"kestrel_file\" {\n  value = module.kestrel.local_file.this.filename\n}\nHCL\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "sealed-kit",
+  "steps": [
+   {
+    "solve": "cd $R/sealed\nprintf '\\nvariable \"env\" {\\n  type = string\\n}\\n' >> modules/dock/variables.tf\nsed -i 's|  name   = \"kestrel\"|  name   = \"kestrel\"\\n  env    = var.env|' main.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/sealed\nprintf '\\nvariable \"env\" {\\n  type    = string\\n  default = \"prod\"\\n}\\n' >> modules/dock/variables.tf\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/sealed\nprintf '\\noutput \"content\" {\\n  value = local_file.this.content\\n}\\n' >> modules/dock/outputs.tf\nprintf '\\noutput \"kestrel_content\" {\\n  value = module.kestrel.content\\n}\\n' >> main.tf\nterraform apply -auto-approve",
+    "wrong": "cd $R/sealed\nprintf '\\noutput \"kestrel_content\" {\\n  value = module.kestrel.local_file.this.content\\n}\\n' >> main.tf\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "kit-sources",
+  "steps": [
+   {
+    "solve": "cd $R/sources\ncat > main.tf <<'HCL'\nmodule \"label\" {\n  source    = \"cloudposse/label/null\"\n  version   = \"0.24.1\"\n  namespace = \"sy\"\n  stage     = \"prod\"\n  name      = \"kestrel\"\n}\n\noutput \"id\" {\n  value = module.label.id\n}\nHCL\nterraform init\nterraform apply -auto-approve",
+    "wrong": "cd $R/sources\ncat > main.tf <<'HCL'\nmodule \"label\" {\n  source    = \"cloudposse/label/null\"\n  namespace = \"sy\"\n  stage     = \"prod\"\n  name      = \"kestrel\"\n}\n\noutput \"id\" {\n  value = module.label.id\n}\nHCL\nterraform init\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/sources\nsed -i 's/version   = \"0.24.1\"/version   = \"0.25.0\"/' main.tf\ncat >> main.tf <<'HCL'\n\nmodule \"label_git\" {\n  source    = \"git::https://github.com/cloudposse/terraform-null-label.git?ref=0.25.0\"\n  namespace = \"sy\"\n  stage     = \"dev\"\n  name      = \"kestrel\"\n}\n\noutput \"dev_id\" {\n  value = module.label_git.id\n}\nHCL\nterraform init -upgrade\nterraform apply -auto-approve",
+    "wrong": "cd $R/sources\nsed -i 's/version   = \"0.24.1\"/version   = \"0.25.0\"/' main.tf\ncat >> main.tf <<'HCL'\n\nmodule \"label_git\" {\n  source    = \"git::https://github.com/cloudposse/terraform-null-label.git\"\n  namespace = \"sy\"\n  stage     = \"dev\"\n  name      = \"kestrel\"\n}\n\noutput \"dev_id\" {\n  value = module.label_git.id\n}\nHCL\nterraform init -upgrade\nterraform apply -auto-approve"
+   }
+  ]
+ },
+ {
+  "folder": "fleet-kit",
+  "steps": [
+   {
+    "solve": "cd $R/fleet\nmkdir -p modules/mast\ncat > modules/mast/variables.tf <<'HCL'\nvariable \"name\" {\n  type        = string\n  description = \"Ship name\"\n}\n\nvariable \"masts\" {\n  type        = number\n  description = \"Number of masts\"\n}\nHCL\ncat > modules/mast/main.tf <<'HCL'\nresource \"local_file\" \"this\" {\n  filename = \"${path.root}/mast-${var.name}.txt\"\n  content  = \"${var.name}: ${var.masts} masts\"\n}\nHCL\ncat > modules/mast/outputs.tf <<'HCL'\noutput \"file\" {\n  value = local_file.this.filename\n}\nHCL\ncat > main.tf <<'HCL'\nmodule \"mast\" {\n  source   = \"./modules/mast\"\n  for_each = var.fleet\n  name     = each.key\n  masts    = each.value\n}\n\nmoved {\n  from = local_file.mast_kestrel\n  to   = module.mast[\"kestrel\"].local_file.this\n}\n\nmoved {\n  from = local_file.mast_osprey\n  to   = module.mast[\"osprey\"].local_file.this\n}\n\nmoved {\n  from = local_file.mast_wren\n  to   = module.mast[\"wren\"].local_file.this\n}\nHCL\nterraform init\nterraform apply -auto-approve",
+    "wrong": "cd $R/fleet\nmkdir -p modules/mast\ncat > modules/mast/variables.tf <<'HCL'\nvariable \"name\" {\n  type = string\n}\n\nvariable \"masts\" {\n  type = number\n}\nHCL\ncat > modules/mast/main.tf <<'HCL'\nresource \"local_file\" \"this\" {\n  filename = \"${path.root}/mast-${var.name}.txt\"\n  content  = \"${var.name}: ${var.masts} masts\"\n}\nHCL\ncat > main.tf <<'HCL'\nmodule \"mast\" {\n  source   = \"./modules/mast\"\n  for_each = var.fleet\n  name     = each.key\n  masts    = each.value\n}\nHCL\nterraform init\nterraform apply -auto-approve"
+   },
+   {
+    "solve": "cd $R/fleet\n$PY - <<'PY'\nt=open('modules/mast/variables.tf').read()\nt=t.replace('description = \"Number of masts\"','description = \"Number of masts\"\\n\\n  validation {\\n    condition     = var.masts >= 1 && var.masts <= 5\\n    error_message = \"A ship has 1 to 5 masts.\"\\n  }')\nopen('modules/mast/variables.tf','w').write(t)\nPY\nterraform plan -var 'fleet={\"kestrel\"=9}' || true",
+    "wrong": "cd $R/fleet\n$PY - <<'PY'\nt=open('variables.tf').read()\nt=t.replace('type = map(number)','type = map(number)\\n\\n  validation {\\n    condition     = length(var.fleet) <= 5\\n    error_message = \"Too many ships.\"\\n  }')\nopen('variables.tf','w').write(t)\nPY"
+   }
+  ]
+ },
+ {
+  "folder": "kit-yard",
+  "steps": [
+   {
+    "solve": "cd $R/kityard\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('source  = var.label_source','source  = \"cloudposse/label/null\"')\nt=t.replace('  version = \"1.0.0\"\\n','')\nt=t.replace('  masts  = 3','  name   = \"kestrel\"\\n  masts  = 3')\nt=t.replace('module.dock.local_file.this.filename','module.dock.file')\nopen('main.tf','w').write(t)\nPY\nterraform init\nterraform validate\nterraform apply -auto-approve",
+    "wrong": "cd $R/kityard\n$PY - <<'PY'\nt=open('main.tf').read()\nt=t.replace('source  = var.label_source','source  = \"cloudposse/label/null\"')\nt=t.replace('  version = \"1.0.0\"\\n','')\nt=t.replace('  masts  = 3','  name   = \"kestrel\"\\n  masts  = 3')\nt=t.replace('module.dock.local_file.this.filename','module.dock.file')\nt=t.replace('version   = \"0.25.0\"','version   = \">= 0.24.0\"')\nopen('main.tf','w').write(t)\nPY\nterraform init\nterraform apply -auto-approve"
+   }
+  ]
  }
 ]

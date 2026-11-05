@@ -1,0 +1,29 @@
+{
+  "title": "🟡 Terraform 39 · Kit sources",
+  "description": "Use a module from the public registry with a pinned version, upgrade it on purpose, then pin a Git copy with ?ref=.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "From the catalogue, pinned",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "Upgrade on purpose, pin Git",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}

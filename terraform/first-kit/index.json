@@ -1,0 +1,29 @@
+{
+  "title": "🟢 Terraform 37 · First kit",
+  "description": "Call a child module with a module block, then read its output from the root.",
+  "details": {
+    "intro": {
+      "text": "intro.md",
+      "background": "background.sh",
+      "foreground": "foreground.sh"
+    },
+    "steps": [
+      {
+        "title": "Order a dock",
+        "text": "step1/text.md",
+        "verify": "step1/verify.sh"
+      },
+      {
+        "title": "Read the receipt",
+        "text": "step2/text.md",
+        "verify": "step2/verify.sh"
+      }
+    ],
+    "finish": {
+      "text": "finish.md"
+    }
+  },
+  "backend": {
+    "imageid": "ubuntu"
+  }
+}
